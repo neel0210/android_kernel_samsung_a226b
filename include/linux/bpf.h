@@ -220,6 +220,7 @@ struct bpf_prog_aux {
 #endif
 	u64 load_time; /* ns since boottime */
 	char name[BPF_OBJ_NAME_LEN];
+	struct bpf_dev_offload *offload;
 	union {
 		struct work_struct work;
 		struct rcu_head	rcu;
@@ -498,6 +499,29 @@ static inline void __dev_map_flush(struct bpf_map *map)
 {
 }
 #endif /* CONFIG_BPF_SYSCALL */
+
+int bpf_prog_offload_compile(struct bpf_prog *prog);
+void bpf_prog_offload_destroy(struct bpf_prog *prog);
+
+#if defined(CONFIG_NET) && defined(CONFIG_BPF_SYSCALL)
+int bpf_prog_offload_init(struct bpf_prog *prog, union bpf_attr *attr);
+
+static inline bool bpf_prog_is_dev_bound(struct bpf_prog_aux *aux)
+{
+	return aux->offload;
+}
+#else
+static inline int bpf_prog_offload_init(struct bpf_prog *prog,
+					union bpf_attr *attr)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline bool bpf_prog_is_dev_bound(struct bpf_prog_aux *aux)
+{
+	return false;
+}
+#endif /* CONFIG_NET && CONFIG_BPF_SYSCALL */
 
 int bpf_prog_offload_compile(struct bpf_prog *prog);
 void bpf_prog_offload_destroy(struct bpf_prog *prog);
