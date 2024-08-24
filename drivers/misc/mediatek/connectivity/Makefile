@@ -43,46 +43,38 @@ endif
     $(MODULE_NAME)-objs += power_throttling/core.o
     $(MODULE_NAME)-objs += power_throttling/test.o
 
+    obj-$(CONFIG_MTK_COMBO) += common/
+    obj-$(CONFIG_MTK_COMBO_WIFI) += wlan/adaptor/
+    obj-$(CONFIG_MTK_COMBO_GPS) += gps/
+    obj-$(CONFIG_MTK_FMRADIO) += fmradio/
+    obj-$(CONFIG_MTK_CONNFEM) += connfem/
+    obj-$(CONFIG_MTK_COMBO_WIFI) += wlan/core/gen4m/
+    obj-$(CONFIG_MTK_COMBO_BT) += bt/mt66xx/wmt/
+    ifneq ($(filter "CONSYS_6833", $(CONFIG_MTK_COMBO_CHIP)),)
+        # for gen4m options
+        export CONFIG_MTK_COMBO_WIFI_HIF=axi
+        export BT_PLATFORM=connac1x
+        export MTK_COMBO_CHIP=CONNAC
+        export WLAN_CHIP_ID=6833
+        export MTK_ANDROID_WMT=y
+        export MTK_ANDROID_EMI=y
+        export MTK_WLAN_SERVICE=yes
+    endif
 
+    ifeq ($(CONFIG_MTK_COMBO), y)
+        ccflags-y += -D CFG_CONNADP_BUILD_IN
+    endif
     # Do build-in for Makefile checking
     # export CONFIG_WLAN_DRV_BUILD_IN=y
 
     ifeq ($(CONFIG_WLAN_DRV_BUILD_IN),y)
-        $(info $$CONFIG_MTK_COMBO_CHIP is [${CONFIG_MTK_COMBO_CHIP}])
-        MTK_PLATFORM_ID := $(patsubst CONSYS_%,%,$(subst ",,$(CONFIG_MTK_COMBO_CHIP)))
-        $(info MTK_PLATFORM_ID is [${MTK_PLATFORM_ID}])
+        PATH_TO_WMT_DRV      = drivers/misc/mediatek/connectivity/common
+        PATH_TO_WLAN_CHR_DRV = drivers/misc/mediatek/connectivity/wlan/adaptor
+        PATH_TO_WLAN_DRV     = drivers/misc/mediatek/connectivity/wlan/core/gen4m
 
-        ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6877"))
-            export MTK_COMBO_CHIP=CONNAC2X2_SOC5_0
-            PATH_TO_WMT_DRV      = vendor/mediatek/kernel_modules/connectivity/conninfra
-            export CONNAC_VER=2_0
-        else ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6885" "CONSYS_6893"))
-            export MTK_COMBO_CHIP=CONNAC2X2_SOC3_0
-            PATH_TO_WMT_DRV      = vendor/mediatek/kernel_modules/connectivity/conninfra
-            export CONNAC_VER=2_0
-        else ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6833"))
-            export MTK_COMBO_CHIP=SOC2_1X1
-            PATH_TO_WMT_DRV      = vendor/mediatek/kernel_modules/connectivity/common
-            export CONNAC_VER=1_0
-        else ifneq (,$(filter $(CONFIG_MTK_COMBO_CHIP), "CONSYS_6779" "CONSYS_6873" "CONSYS_6853"))
-            export MTK_COMBO_CHIP=SOC2_2X2
-            PATH_TO_WMT_DRV      = vendor/mediatek/kernel_modules/connectivity/common
-            export CONNAC_VER=1_0
-        else
-            export MTK_COMBO_CHIP=CONNAC
-            PATH_TO_WMT_DRV      = vendor/mediatek/kernel_modules/connectivity/common
-            export CONNAC_VER=1_0
-        endif
-
-        export MTK_PLATFORM_WMT=$(MTK_PLATFORM)
-        export TARGET_BOARD_PLATFORM_WMT=$(patsubst CONSYS_%,mt%,$(subst ",,$(CONFIG_MTK_COMBO_CHIP)))
-
-        PATH_TO_WLAN_CHR_DRV = vendor/mediatek/kernel_modules/connectivity/wlan/adaptor
-        PATH_TO_WLAN_DRV     = vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m
-
-        ABS_PATH_TO_WMT_DRV      = $(srctree)/../$(PATH_TO_WMT_DRV)
-        ABS_PATH_TO_WLAN_CHR_DRV = $(srctree)/../$(PATH_TO_WLAN_CHR_DRV)
-        ABS_PATH_TO_WLAN_DRV     = $(srctree)/../$(PATH_TO_WLAN_DRV)
+        ABS_PATH_TO_WMT_DRV      = $(srctree)/$(PATH_TO_WMT_DRV)
+        ABS_PATH_TO_WLAN_CHR_DRV = $(srctree)/$(PATH_TO_WLAN_CHR_DRV)
+        ABS_PATH_TO_WLAN_DRV     = $(srctree)/$(PATH_TO_WLAN_DRV)
 
         # check wlan driver folder
         ifeq (,$(wildcard $(ABS_PATH_TO_WMT_DRV)))
