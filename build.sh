@@ -1,0 +1,62 @@
+#!/bin/bash
+KD=(pwd)
+AIK="/home/itachi/Desktop/AIK"
+SP="/home/itachi/Desktop/AIK/split_img"
+function compile() 
+{
+source ~/.bashrc && source ~/.profile
+export LC_ALL=C && export USE_CCACHE=1
+rm -rf *.zip
+export ARCH=arm64
+export KBUILD_BUILD_HOST=android-build
+export KBUILD_BUILD_USER="Itachi"
+clangbin=clang/bin/clang
+if ! [ -a $clangbin ]; then git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 clang
+fi
+gcc64bin=gcc64/bin/aarch64-linux-android-as
+if ! [ -a $gcc64bin ]; then git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
+fi
+gcc32bin=gcc32/bin/arm-linux-androideabi-as
+if ! [ -a $gcc32bin ]; then git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
+fi
+rm -rf AnyKernel
+make O=out ARCH=arm64 a22x_defconfig
+PATH="${PWD}/clang/bin:${PATH}:${PWD}/gcc32/bin:${PATH}:${PWD}/gcc64/bin:${PATH}" \
+make -j$(nproc --all) O=out \
+                      ARCH=arm64 \
+                      CC="clang" \
+                      CLANG_TRIPLE=aarch64-linux-gnu- \
+                      CROSS_COMPILE="${PWD}/gcc64/bin/aarch64-linux-android-" \
+                      CROSS_COMPILE_ARM32="${PWD}/gcc32/bin/arm-linux-androideabi-" \
+                      LD=ld.lld \
+                      CONFIG_NO_ERROR_ON_MISMATCH=y
+}
+function zupload()
+{
+zimage=out/arch/arm64/boot/Image.gz
+if ! [ -a $zimage ];
+then
+echo  " Failed To Compile Kernel"
+else
+echo -e " Kernel Compile Successful"
+sudo cp out/arch/arm64/boot/Image.gz $AIK/split_img
+cd $SP
+mv Image.gz boot.img-kernel
+cd $AIK
+./repackimg.sh
+
+# Create the caption text
+    caption=ok
+
+    # Upload Time!!
+    for i in *.img; do
+        curl -F "document=@$i" --form-string "caption=${caption}" "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument?chat_id=${CHAT_ID}&parse_mode=HTML"
+    done
+    
+    rm -rf A22_*.img
+    cd $KD
+    fi
+
+}
+compile
+zupload
