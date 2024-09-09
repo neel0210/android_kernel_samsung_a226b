@@ -1,15 +1,35 @@
 #!/bin/bash
-KD=(pwd)
+#
+KERNEL_DIR=$(pwd)
 AIK="/home/itachi/Desktop/AIK"
 SP="/home/itachi/Desktop/AIK/split_img"
-function compile() 
-{
-source ~/.bashrc && source ~/.profile
-export LC_ALL=C && export USE_CCACHE=1
-rm -rf *.zip
+ZIMG=out/arch/arm64/boot/Image
+
+# arch & build
 export ARCH=arm64
 export KBUILD_BUILD_HOST=android-build
 export KBUILD_BUILD_USER="Itachi"
+
+# Device related
+A225G(){
+    DEVICE_KERNEL_BOARD='SRPTL28A009'
+    DEVICE_KERNEL_BASE=0x40078000
+    DEVICE_KERNEL_PAGESIZE=2048
+    DEVICE_RAMDISK_OFFSET=0x11088000
+    DEVICE_SECOND_OFFSET=0xbff88000
+    PLATFORM_VERSION="12.0.0"
+    PLATFORM_PATCH_LEVEL="2024-03"
+    DEVICE_KERNEL_CMDLINE="" 
+    DEVICE_KERNEL_HEADER=2
+    DEVICE_DTB_HASHTYPE='sha1'  
+    DEVICE_KERNEL_OFFSET=0x00008000 
+    DEVICE_TAGS_OFFSET=0x07c08000
+    DEVICE_HEADER_SIZE=1660
+}
+
+
+function compile() 
+{
 clangbin=clang/bin/clang
 if ! [ -a $clangbin ]; then git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 clang
 fi
@@ -31,32 +51,42 @@ make -j$(nproc --all) O=out \
                       LD=ld.lld \
                       CONFIG_NO_ERROR_ON_MISMATCH=y
 }
-function zupload()
-{
-zimage=out/arch/arm64/boot/Image.gz
-if ! [ -a $zimage ];
-then
-echo  " Failed To Compile Kernel"
+
+check_build(){
+        echo " " && echo " "
+
+        echo -e "${YELLOW}                     x Building Boot.img x"
+        A225G
+        #
+        $(pwd)/tools/make/bin/mkbootimg \
+                  --kernel $ZIMG \
+                  --cmdline " " --board "$DEVICE_KERNEL_BOARD" \
+                  --base $DEVICE_KERNEL_BASE --pagesize $DEVICE_KERNEL_PAGESIZE \
+                  --kernel_offset $DEVICE_KERNEL_OFFSET --ramdisk_offset $DEVICE_RAMDISK_OFFSET \
+                  --second_offset $DEVICE_SECOND_OFFSET --tags_offset $DEVICE_TAGS_OFFSET \
+                  --os_version "$PLATFORM_VERSION" --os_patch_level "$PLATFORM_PATCH_LEVEL" \
+                  --header_version $DEVICE_KERNEL_HEADER --hashtype $DEVICE_DTB_HASHTYPE \
+                  -o $KERNEL_DIR/boot.img
+                  sleep 2
+#
+if [ -f ${KERNEL_DIR}/boot.img ];then
+    echo -e "${GRN}Image has been built at $(pwd)/boot.img${RST}"
 else
-echo -e " Kernel Compile Successful"
-sudo cp out/arch/arm64/boot/Image.gz $AIK/split_img
-cd $SP
-mv Image.gz boot.img-kernel
-cd $AIK
-./repackimg.sh
+    echo -e "${RED}Check for error"
+fi
+}
 
-# Create the caption text
-    caption=ok
-
-    # Upload Time!!
-    for i in *.img; do
-        curl -F "document=@$i" --form-string "caption=${caption}" "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument?chat_id=${CHAT_ID}&parse_mode=HTML"
-    done
-    
-    rm -rf A22_*.img
-    cd $KD
+# UPLOAD
+upload(){
+    if [ -f $(pwd)/boot.img ];then
+        for i in boot.img
+        do
+        curl -F "document=@$i" --form-string "caption=" "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument?chat_id=${CHAT_ID}&parse_mode=HTML"
+        done
+    else
+        echo -e "${RED}Boot image not found"
     fi
-
 }
 compile
-zupload
+check_build
+upload

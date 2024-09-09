@@ -6,3 +6,4 @@ out/
 security/samsung/defex_lsm/defex_packed_rules.bin
 security/samsung/defex_lsm/defex_packed_rules.inc
 security/samsung/defex_lsm/pack_rules
+boot.img
