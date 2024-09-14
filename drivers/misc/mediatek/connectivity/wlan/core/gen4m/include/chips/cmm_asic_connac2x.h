@@ -1044,6 +1044,7 @@ enum {
 	SW_INT_SUBSYS_RESET,
 	SW_INT_WHOLE_RESET,
 	SW_INT_SW_WFDMA,
+	SW_INT_TIME_SYNC,
 };
 
 #if (CFG_SUPPORT_CONNINFRA == 1)
@@ -1051,6 +1052,7 @@ extern u_int8_t g_IsWfsysBusHang;
 extern struct completion g_triggerComp;
 extern u_int8_t fgIsResetting;
 extern u_int8_t g_fgRstRecover;
+extern struct regmap *g_regmap;
 #if (CFG_ANDORID_CONNINFRA_COREDUMP_SUPPORT == 1)
 extern u_int8_t g_IsNeedWaitCoredump;
 #endif
@@ -1097,6 +1099,14 @@ uint8_t asicConnac2xWfdmaWaitIdle(
 	uint8_t index,
 	uint32_t round,
 	uint32_t wait_us);
+void asicConnac2xWfdmaTxRingBasePtrExtCtrl(
+	struct GLUE_INFO *prGlueInfo,
+	struct RTMP_TX_RING *tx_ring,
+	u_int32_t index);
+void asicConnac2xWfdmaRxRingBasePtrExtCtrl(
+	struct GLUE_INFO *prGlueInfo,
+	struct RTMP_RX_RING *rx_ring,
+	u_int32_t index);
 void asicConnac2xWfdmaTxRingExtCtrl(
 	struct GLUE_INFO *prGlueInfo,
 	struct RTMP_TX_RING *tx_ring,

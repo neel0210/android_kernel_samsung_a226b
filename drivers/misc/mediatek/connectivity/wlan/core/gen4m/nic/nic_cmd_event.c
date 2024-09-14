@@ -380,6 +380,9 @@ void nicCmdEventPfmuTagRead(IN struct ADAPTER *prAdapter,
 	g_rPfmuTag1 = prPfumTagRead->ru4TxBfPFMUTag1;
 	g_rPfmuTag2 = prPfumTagRead->ru4TxBfPFMUTag2;
 
+	kalOidComplete(prGlueInfo, prCmdInfo,
+		       u4QueryInfoLen, WLAN_STATUS_SUCCESS);
+
 	DBGLOG(INIT, INFO,
 	       "========================== (R)Tag1 info ==========================\n");
 
@@ -915,9 +918,8 @@ void nicCmdEventQueryLinkSpeedEx(IN struct ADAPTER *prAdapter,
 	struct EVENT_LINK_QUALITY *prLinkQuality;
 	struct PARAM_LINK_SPEED_EX *pu4LinkSpeed;
 	struct GLUE_INFO *prGlueInfo;
-	uint32_t u4CurRxRate, u4MaxRxRate;
+	uint32_t u4CurRxRate, u4MaxRxRate, u4CurRxBw;
 	uint32_t u4QueryInfoLen;
-	struct RateInfo rRateInfo = {0};
 	uint32_t i;
 
 	ASSERT(prAdapter);
@@ -939,11 +941,13 @@ void nicCmdEventQueryLinkSpeedEx(IN struct ADAPTER *prAdapter,
 
 			/*Fill Rx Rate in unit of 100bps*/
 			if (IS_BSS_INDEX_AIS(prAdapter, i) &&
-			    wlanGetRxRate(prGlueInfo, i, &u4CurRxRate,
-				    &u4MaxRxRate, &rRateInfo) == 0) {
+				(wlanGetRxRate(prGlueInfo, i,
+							  &u4CurRxRate,
+							  &u4MaxRxRate,
+							  &u4CurRxBw) == 0)) {
 				pu4LinkSpeed->rLq[i].u2RxLinkSpeed =
 					u4CurRxRate * 1000;
-				pu4LinkSpeed->rLq[i].u4RxBw = rRateInfo.u4Bw;
+				pu4LinkSpeed->rLq[i].u4RxBw = u4CurRxBw;
 			} else {
 				pu4LinkSpeed->rLq[i].u2RxLinkSpeed = 0;
 				pu4LinkSpeed->rLq[i].u4RxBw = 0;
@@ -4151,7 +4155,7 @@ void nicEventStaAgingTimeout(IN struct ADAPTER *prAdapter,
 
 		if (prAdapter->fgIsP2PRegistered) {
 			p2pFuncDisconnect(prAdapter, prBssInfo, prStaRec, FALSE,
-				REASON_CODE_DISASSOC_INACTIVITY, TRUE);
+					  REASON_CODE_DISASSOC_INACTIVITY);
 		}
 
 	}
@@ -4322,7 +4326,7 @@ void nicEventAddPkeyDone(IN struct ADAPTER *prAdapter,
 	if (prAdapter->fgIsPostponeTxEAPOLM3) {
 		prAdapter->fgIsPostponeTxEAPOLM3 = FALSE;
 		DBGLOG(RX, INFO,
-			"[WPA1 TKIP] PTK is installed and ready to do group key handshake!\n");
+			"[Passpoint] PTK is installed and ready!\n");
 	}
 }
 
@@ -4537,9 +4541,7 @@ void nicEventUpdateCoexStatus(IN struct ADAPTER *prAdapter,
 	struct BSS_DESC *prBssDesc;
 	struct BSS_INFO *prBssInfo;
 	struct CMD_ADDBA_REJECT rAddBaReject;
-#if (CFG_TC10_FEATURE == 1)
-	struct ROAMING_INFO *prRoamingFsmInfo = NULL;
-#endif
+
 	enum ENUM_COEX_MODE eCoexMode = COEX_NONE_BT;
 	uint32_t rStatus = WLAN_STATUS_SUCCESS;
 	uint8_t ucBssIndex = AIS_DEFAULT_INDEX;
@@ -4576,11 +4578,6 @@ void nicEventUpdateCoexStatus(IN struct ADAPTER *prAdapter,
 		prStaRec = aisGetStaRecOfAP(prAdapter, ucBssIndex);
 		fgHitBlackList = (bssGetIotApAction(prAdapter, prBssDesc) ==
 				  WLAN_IOT_AP_COEX_DIS_RX_AMPDU);
-
-#if (CFG_TC10_FEATURE == 1)
-		prRoamingFsmInfo = aisGetRoamingInfo(prAdapter, ucBssIndex);
-		prRoamingFsmInfo->fgIsGBandCoex = FALSE;
-#endif
 		if (!prBssInfo || !prStaRec)
 			return;
 		/**
@@ -4698,60 +4695,6 @@ void nicEventReportUEvent(IN struct ADAPTER *prAdapter,
 	}
 }
 
-#if (CFG_SUPPORT_PKT_OFLD == 1)
-
-void nicEventPktOfld(IN struct ADAPTER *prAdapter,
-		     IN struct WIFI_EVENT *prEvent)
-{
-	struct CMD_OFLD_INFO *prOfldInfo;
-
-	prOfldInfo = (struct CMD_OFLD_INFO *) (prEvent->aucBuffer);
-
-	if (prOfldInfo != NULL) {
-		DBGLOG(NIC, INFO, "Packet ofld event: type[%d] op[%d]\n",
-			prOfldInfo->ucType, prOfldInfo->ucOp);
-
-#if (CFG_SUPPORT_RA_OFLD == 1)
-
-		if (prOfldInfo->ucType == PKT_OFLD_TYPE_RA &&
-			prOfldInfo->ucOp == PKT_OFLD_OP_REPORT) {
-			struct sk_buff *prSkb = NULL;
-			void *pvPacket = NULL;
-			uint32_t u4Size = 0;
-			uint8_t *pucRecvBuff;
-			uint32_t u4Res = 0;
-			uint8_t aucMcAddr[MAC_ADDR_LEN] = {
-					0x33, 0x33, 0x0, 0x0, 0x0, 0x1};
-			uint8_t aucIpv6Eth[2] = {0x86, 0xdd};
-
-			u4Size = prOfldInfo->u4BufLen + sizeof(struct ethhdr);
-
-			pvPacket = kalPacketAlloc(prAdapter->prGlueInfo, u4Size,
-							&pucRecvBuff);
-
-			if (pvPacket) {
-				prSkb = pvPacket;
-				prSkb->len = u4Size;
-				prSkb->ip_summed = CHECKSUM_UNNECESSARY;
-
-				kalMemCopy(&pucRecvBuff[0], &aucMcAddr[0],
-						MAC_ADDR_LEN);
-				kalMemCopy(&pucRecvBuff[12], &aucIpv6Eth[0], 2);
-				kalMemCopy(&pucRecvBuff[sizeof(struct ethhdr)],
-					&prOfldInfo->aucBuf[0], u4Size);
-
-				u4Res = kalRxIndicateOnePkt(
-						prAdapter->prGlueInfo,
-						pvPacket);
-				DBGLOG(NIC, INFO, "RA report result: %d",
-					u4Res);
-			}
-		}
-#endif
-	}
-}
-
-#endif
 
 #if CFG_SUPPORT_REPLAY_DETECTION
 void nicCmdEventSetAddKey(IN struct ADAPTER *prAdapter,
@@ -4971,17 +4914,17 @@ struct _CMD_EVENT_TLV_ELEMENT_T *nicGetTargetTlvElement(
 
 	prTlvCommon = (struct _CMD_EVENT_TLV_COMMOM_T *)prCmdBuffer;
 
-	/*Check target element is exist or not*/
+	/* Check target element is exist or not */
 	if (u2TargetTlvElement > prTlvCommon->u2TotalElementNum) {
-		/*New element or element is not exist*/
+		/* New element or element is not exist */
 		if (u2TargetTlvElement - prTlvCommon->u2TotalElementNum > 1) {
-			/*element is not exist*/
+			/* element is not exist */
 			DBGLOG(TX, ERROR, "Target element is not exist\n");
 			return NULL;
 		}
 	}
 
-	/*Get target element*/
+	/* Get target element */
 	pvCurrPtr = prCmdBuffer;
 
 	for (u2ElementNum = 1; u2ElementNum <= u2TargetTlvElement;
@@ -5008,7 +4951,7 @@ uint32_t nicAddNewTlvElement(IN uint32_t u4Tag, IN uint32_t u4BodyLen,
 
 	prTlvCommon = (struct _CMD_EVENT_TLV_COMMOM_T *)prCmdBuffer;
 
-	/*Get new element*/
+	/* Get new element */
 	prTlvElement = nicGetTargetTlvElement(
 		prTlvCommon->u2TotalElementNum + 1, prCmdBuffer);
 
@@ -5017,22 +4960,22 @@ uint32_t nicAddNewTlvElement(IN uint32_t u4Tag, IN uint32_t u4BodyLen,
 		return WLAN_STATUS_FAILURE;
 	}
 
-	/*Check tatol len is overflow or not*/
+	/* Check tatol len is overflow or not */
 	u4TotalLen = ((size_t)prTlvElement->aucbody + u4BodyLen) -
 		     (size_t)prCmdBuffer;
 
 	if (u4TotalLen > prCmdBufferLen) {
-		/*Length overflow*/
+		/* Length overflow */
 		DBGLOG(TX, ERROR,
 		       "Length overflow: Total len:%d, CMD buffer len:%d\n",
 		       u4TotalLen, prCmdBufferLen);
 		return WLAN_STATUS_NOT_ACCEPTED;
 	}
 
-	/*Update total element count*/
+	/* Update total element count */
 	prTlvCommon->u2TotalElementNum++;
 
-	/*Fill TLV constant*/
+	/* Fill TLV constant */
 	prTlvElement->tag_type = u4Tag;
 
 	prTlvElement->body_len = u4BodyLen;
@@ -5056,10 +4999,10 @@ void nicNanEventTestProcess(IN struct ADAPTER *prAdapter,
 
 	DBGLOG(TX, INFO, "nicNanEventDispatcher\n");
 
-	/*Dump Event content*/
+	/* Dump Event content */
 	nicDumpTlv((void *)prEvent->aucBuffer);
 
-	/*Process CMD done handler*/
+	/* Process CMD done handler */
 	prCmdInfo = nicGetPendingCmdInfo(prAdapter, prEvent->ucSeqNum);
 
 	if (prCmdInfo != NULL) {

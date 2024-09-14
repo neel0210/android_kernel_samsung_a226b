@@ -120,6 +120,7 @@
 #define WMT_IOCTL_FW_PATCH_UPDATE_RST	_IOR(WMT_IOC_MAGIC, 34, int)
 #define WMT_IOCTL_GET_VENDOR_PATCH_NUM		_IOW(WMT_IOC_MAGIC, 35, int)
 #define WMT_IOCTL_GET_VENDOR_PATCH_VERSION	_IOR(WMT_IOC_MAGIC, 36, char*)
+#define WMT_IOCTL_SET_VENDOR_PATCH_VERSION	_IOW(WMT_IOC_MAGIC, 37, char*)
 #define WMT_IOCTL_GET_CHECK_PATCH_STATUS	_IOR(WMT_IOC_MAGIC, 38, int)
 #define WMT_IOCTL_SET_CHECK_PATCH_STATUS	_IOW(WMT_IOC_MAGIC, 39, int)
 #define WMT_IOCTL_SET_ACTIVE_PATCH_VERSION	_IOR(WMT_IOC_MAGIC, 40, char*)
@@ -808,7 +809,7 @@ ssize_t WMT_read(struct file *filp, char __user *buf, size_t count, loff_t *f_po
 	if (pCmd != NULL) {
 		cmdLen = osal_strlen(pCmd) < NAME_MAX ? osal_strlen(pCmd) : NAME_MAX;
 		if (cmdLen > count)
-			cmdLen = (UINT32)count;
+			cmdLen = count;
 		WMT_DBG_FUNC("cmd str(%s)\n", pCmd);
 		if (copy_to_user(buf, pCmd, cmdLen))
 			iRet = -EFAULT;
@@ -1076,14 +1077,8 @@ LONG WMT_unlocked_ioctl(struct file *filp, UINT32 cmd, ULONG arg)
 	case 10:
 		if (mtk_wcn_stp_coredump_start_get()) {
 			wmt_lib_host_awake_get();
-			if (wmt_detect_get_chip_type() == WMT_CHIP_TYPE_SOC) {
-				char buf[60];
-
-				if (copy_from_user(buf, (PVOID)arg, 60) == 0) {
-					buf[59] = '\0';
-					WMT_INFO_FUNC("coredump path: %s\n", buf);
-				}
-			}
+			if (wmt_detect_get_chip_type() == WMT_CHIP_TYPE_SOC)
+				WMT_INFO_FUNC("stp dump start.\n");
 			else {
 				WMT_INFO_FUNC("Trigger kernel api dump.\n");
 				if (wmt_detect_get_chip_type() == WMT_CHIP_TYPE_COMBO ||
@@ -1110,12 +1105,7 @@ LONG WMT_unlocked_ioctl(struct file *filp, UINT32 cmd, ULONG arg)
 	case 11:
 		if (mtk_wcn_stp_coredump_start_get()) {
 			if (wmt_detect_get_chip_type() == WMT_CHIP_TYPE_SOC) {
-				char buf[60];
-
-				if (copy_from_user(buf, (PVOID)arg, 60) == 0) {
-					buf[59] = '\0';
-					WMT_INFO_FUNC("emi_dump path: %s\n", buf);
-				}
+				WMT_INFO_FUNC("Dump connsys EMI done.\n");
 				mtk_stp_notify_emi_dump_end();
 			}
 			wmt_lib_host_awake_put();
@@ -1159,7 +1149,7 @@ LONG WMT_unlocked_ioctl(struct file *filp, UINT32 cmd, ULONG arg)
 			break;
 		}
 
-		pAtchNum = (UINT32)arg;
+		pAtchNum = arg;
 
 		if (pPatchInfo == NULL)
 			pPatchInfo = kcalloc(pAtchNum, sizeof(WMT_PATCH_INFO), GFP_ATOMIC);
@@ -1383,6 +1373,24 @@ LONG WMT_unlocked_ioctl(struct file *filp, UINT32 cmd, ULONG arg)
 		break;
 	case WMT_IOCTL_GET_VENDOR_PATCH_NUM:
 		iRet = wmt_lib_get_vendor_patch_num();
+		break;
+	case WMT_IOCTL_SET_VENDOR_PATCH_VERSION:
+		do {
+			struct wmt_vendor_patch patch;
+
+			if (copy_from_user(&patch, (PVOID)arg,
+				sizeof(struct wmt_vendor_patch))) {
+				WMT_ERR_FUNC("copy_from_user failed at %d\n", __LINE__);
+				iRet = -EFAULT;
+				break;
+			}
+
+			iRet = wmt_lib_set_vendor_patch_version(&patch);
+			if (iRet) {
+				iRet = -EFAULT;
+				break;
+			}
+		} while (0);
 		break;
 	case WMT_IOCTL_GET_VENDOR_PATCH_VERSION:
 		do {

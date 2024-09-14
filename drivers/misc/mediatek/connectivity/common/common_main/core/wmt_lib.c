@@ -648,7 +648,7 @@ INT32 wmt_lib_set_hif(ULONG hifconf)
 	case STP_UART_FULL:
 		pHif->hifType = WMT_HIF_UART;
 		pHif->uartFcCtrl = ((hifconf & 0xc) >> 2);
-		val = (UINT32)(hifconf >> 8);
+		val = (hifconf >> 8);
 		pHif->au4HifConf[0] = val;
 		pHif->au4HifConf[1] = val;
 		mtk_wcn_stp_set_if_tx_type(STP_UART_IF_TX);
@@ -2066,8 +2066,14 @@ INT32 wmt_lib_try_pwr_off(VOID)
 	pSignal = &pOp->signal;
 	pSignal->timeoutValue = MAX_FUNC_OFF_TIME;
 	pOp->op.opId = WMT_OPID_TRY_PWR_OFF;
+	if (DISABLE_PSM_MONITOR()) {
+		WMT_ERR_FUNC("wake up failed\n");
+		wmt_lib_put_op_to_free_queue(pOp);
+		return -2;
+	}
 
 	bRet = wmt_lib_put_act_op(pOp);
+	ENABLE_PSM_MONITOR();
 	if (bRet == MTK_WCN_BOOL_FALSE) {
 		WMT_WARN_FUNC("WMT_OPID_TRY_PWR_OFF fail(%d)\n", bRet);
 		return -2;
@@ -2724,11 +2730,6 @@ INT32 wmt_lib_register_trigger_assert_cb(trigger_assert_cb trigger_assert)
 {
 	wmt_plat_trigger_assert_cb_reg(trigger_assert);
 	return 0;
-}
-
-INT32 wmt_lib_get_host_assert_info(PUINT32 type, PUINT32 reason, PUINT32 en)
-{
-	return stp_dbg_get_host_assert_info(type, reason, en);
 }
 
 UINT32 wmt_lib_set_host_assert_info(UINT32 type, UINT32 reason, UINT32 en)

@@ -40,18 +40,9 @@
 #define IOCTL_MNL_NVRAM_MEM_TO_FILE  3
 #define IOCTL_ADC_CAPTURE_ADDR_GET   4
 
-#if defined(CONFIG_MACH_MT6761)
+#if defined(CONFIG_MACH_MT6765) || defined(CONFIG_MACH_MT6761) || defined(CONFIG_MACH_MT6768)
 #define GPS_EMI_MPU_REGION           29
 #define GPS_EMI_BASE_ADDR_OFFSET     (2*SZ_1M + SZ_1M/2 + 0x1000)
-#define GPS_EMI_MPU_SIZE             (SZ_1M + SZ_1M/2 - 0x2000)
-#define EMI_MPU_PROTECTION_IS_READY  1
-#if EMI_MPU_PROTECTION_IS_READY
-#include <mt_emi_api.h>
-#endif
-#endif
-#if defined(CONFIG_MACH_MT6765) || defined(CONFIG_MACH_MT6768)
-#define GPS_EMI_MPU_REGION           29
-#define GPS_EMI_BASE_ADDR_OFFSET     (2*SZ_1M + SZ_1M/2 + 0x1000 + 0x40000)
 #define GPS_EMI_MPU_SIZE             (SZ_1M + SZ_1M/2 - 0x2000)
 #define EMI_MPU_PROTECTION_IS_READY  1
 #if EMI_MPU_PROTECTION_IS_READY
@@ -76,7 +67,7 @@
 #include <mt_emi_api.h>
 #endif
 #endif
-#if defined(CONFIG_MACH_MT6873) || defined(CONFIG_MACH_MT6893)
+#if defined(CONFIG_MACH_MT6873) || defined(CONFIG_MACH_MT6853) || defined(CONFIG_MACH_MT6893)
 #define GPS_EMI_NEW_API
 #define GPS_EMI_MPU_REGION           29
 #define GPS_EMI_BASE_ADDR_OFFSET     (3*SZ_1M + 0x10000)
@@ -88,34 +79,10 @@
 #include <memory/mediatek/emi.h>
 #endif
 #endif
-#if defined(CONFIG_MACH_MT6853)
-#define GPS_EMI_NEW_API
-#define GPS_EMI_MPU_REGION           29
-#define GPS_EMI_BASE_ADDR_OFFSET     (3*SZ_1M + 0x10000 + 0x40000)
-#define GPS_EMI_MPU_SIZE             (0xF0000)
-#define GPS_DL_EMI_MPU_DOMAIN_AP      0
-#define GPS_DL_EMI_MPU_DOMAIN_CONN    2
-#define EMI_MPU_PROTECTION_IS_READY  1
-#if EMI_MPU_PROTECTION_IS_READY
-#include <memory/mediatek/emi.h>
-#endif
-#endif
-#if defined(CONFIG_MACH_MT6781)
+#if defined(CONFIG_MACH_MT6833) || defined(CONFIG_MACH_MT6781)
 #define GPS_EMI_NEW_API
 #define GPS_EMI_MPU_REGION           29
 #define GPS_EMI_BASE_ADDR_OFFSET     (4*SZ_1M)
-#define GPS_EMI_MPU_SIZE             (0xFFFFF)
-#define GPS_DL_EMI_MPU_DOMAIN_AP      0
-#define GPS_DL_EMI_MPU_DOMAIN_CONN    2
-#define EMI_MPU_PROTECTION_IS_READY  1
-#if EMI_MPU_PROTECTION_IS_READY
-#include <memory/mediatek/emi.h>
-#endif
-#endif
-#if defined(CONFIG_MACH_MT6833)
-#define GPS_EMI_NEW_API
-#define GPS_EMI_MPU_REGION           29
-#define GPS_EMI_BASE_ADDR_OFFSET     (4*SZ_1M + 0x40000)
 #define GPS_EMI_MPU_SIZE             (0xFFFFF)
 #define GPS_DL_EMI_MPU_DOMAIN_AP      0
 #define GPS_DL_EMI_MPU_DOMAIN_CONN    2
@@ -494,7 +461,7 @@ err_out:
 }
 
 /*****************************************************************************/
-static void __exit gps_emi_mod_exit(void)
+static void gps_emi_mod_exit(void)
 {
 	if (!devobj) {
 		GPS_ERR("null pointer: %p\n", devobj);

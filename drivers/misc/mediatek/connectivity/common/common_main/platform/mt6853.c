@@ -506,13 +506,7 @@ static VOID consys_set_if_pinmux(MTK_WCN_BOOL enable)
 {
 	UINT8 *consys_if_pinmux_reg_base = NULL;
 	UINT8 *consys_if_pinmux_driving_base = NULL;
-	UINT32 pinMux_mask = CONSYS_IF_PINMUX_02_6631_MASK;
-	UINT32 pinMux_value = CONSYS_IF_PINMUX_02_6631_VALUE;
 
-	if (mtk_wcn_consys_get_adie_chipid() == SECONDARY_ADIE) {
-		pinMux_mask = CONSYS_IF_PINMUX_02_6635_MASK;
-		pinMux_value = CONSYS_IF_PINMUX_02_6635_VALUE;
-	}
 	/* Switch D die pinmux for connecting A die */
 	consys_if_pinmux_reg_base = ioremap(CONSYS_IF_PINMUX_REG_BASE, 0x1000);
 	if (!consys_if_pinmux_reg_base) {
@@ -537,7 +531,7 @@ static VOID consys_set_if_pinmux(MTK_WCN_BOOL enable)
 		CONSYS_REG_WRITE(consys_if_pinmux_reg_base + CONSYS_IF_PINMUX_02_OFFSET,
 				(CONSYS_REG_READ(consys_if_pinmux_reg_base +
 				CONSYS_IF_PINMUX_02_OFFSET) &
-				pinMux_mask) | pinMux_value);
+				CONSYS_IF_PINMUX_02_MASK) | CONSYS_IF_PINMUX_02_VALUE);
 		/* set pinmux driving to 2mA */
 		CONSYS_REG_WRITE(consys_if_pinmux_driving_base + CONSYS_IF_PINMUX_DRIVING_OFFSET_1,
 				(CONSYS_REG_READ(consys_if_pinmux_driving_base +
@@ -561,7 +555,7 @@ static VOID consys_set_if_pinmux(MTK_WCN_BOOL enable)
 				CONSYS_IF_PINMUX_01_OFFSET) & CONSYS_IF_PINMUX_01_MASK);
 		CONSYS_REG_WRITE(consys_if_pinmux_reg_base + CONSYS_IF_PINMUX_02_OFFSET,
 				CONSYS_REG_READ(consys_if_pinmux_reg_base +
-				CONSYS_IF_PINMUX_02_OFFSET) & pinMux_mask);
+				CONSYS_IF_PINMUX_02_OFFSET) & CONSYS_IF_PINMUX_02_MASK);
 #if CLK_CTRL_TCXOENA_REQ
 		if (wmt_plat_soc_co_clock_flag_get() == 0) {
 			CONSYS_REG_WRITE(consys_if_pinmux_reg_base + CONSYS_CLOCK_TCXO_MODE_OFFSET,

@@ -100,11 +100,8 @@ extern const struct net_device_ops p2p_netdev_ops;
 #define OID_SET_GET_STRUCT_LENGTH		4096
 
 #define MAX_P2P_IE_SIZE	5
-#if CFG_TC10_FEATURE
-#define P2P_MAXIMUM_CLIENT_COUNT                    10
-#else
+
 #define P2P_MAXIMUM_CLIENT_COUNT                    16
-#endif
 #define P2P_DEFAULT_CLIENT_COUNT 4
 
 /******************************************************************************
@@ -235,8 +232,6 @@ struct GL_P2P_INFO {
 	/*BOOLEAN fgEnableHotspotOptimization;*//* TH3 multiple P2P */
 	/*UINT_32 u4PsLevel;*//* TH3 multiple P2P */
 #endif
-
-	struct LINK rWaitTxDoneLink;
 
 	enum ENUM_CHNL_SWITCH_POLICY eChnlSwitchPolicy;
 	u_int8_t fgChannelSwitchReq;

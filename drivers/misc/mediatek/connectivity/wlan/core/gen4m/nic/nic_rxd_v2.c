@@ -344,8 +344,7 @@ void nic_rxd_v2_fill_rfb(
 #endif
 }
 
-void nic_rxd_v2_parse_drop_pkt(struct SW_RFB *prSwRfb,
-	struct ADAPTER *prAdapter, uint8_t ucBssIndex)
+void nic_rxd_v2_parse_drop_pkt(struct SW_RFB *prSwRfb)
 {
 	uint16_t *pu2EtherType;
 
@@ -357,7 +356,7 @@ void nic_rxd_v2_parse_drop_pkt(struct SW_RFB *prSwRfb,
 		prSwRfb->u2PacketLen, prSwRfb->ucSecMode,
 		prSwRfb->ucWlanIdx, prSwRfb->ucStaRecIdx
 	);
-	STATS_RX_PKT_INFO_DISPLAY(prSwRfb, prAdapter, ucBssIndex);
+	STATS_RX_PKT_INFO_DISPLAY(prSwRfb);
 }
 
 u_int8_t nic_rxd_v2_sanity_check(
@@ -367,7 +366,6 @@ u_int8_t nic_rxd_v2_sanity_check(
 	struct mt66xx_chip_info *prChipInfo;
 	struct HW_MAC_CONNAC2X_RX_DESC *prRxStatus;
 	u_int8_t fgDrop = FALSE;
-	uint8_t ucBssIndex = 0;
 
 	prChipInfo = prAdapter->chip_info;
 	prRxStatus = (struct HW_MAC_CONNAC2X_RX_DESC *)prSwRfb->prRxStatus;
@@ -386,7 +384,7 @@ u_int8_t nic_rxd_v2_sanity_check(
 		else if (HAL_MAC_CONNAC2X_RX_STATUS_IS_FRAG(prRxStatus))
 			prSwRfb->fgFragFrame = TRUE;
 	} else {
-		ucBssIndex =
+		uint8_t ucBssIndex =
 			secGetBssIdxByWlanIdx(prAdapter,
 			HAL_MAC_CONNAC2X_RX_STATUS_GET_WLAN_IDX(prRxStatus));
 
@@ -459,8 +457,7 @@ u_int8_t nic_rxd_v2_sanity_check(
 			DBGLOG(RSN, INFO,
 				"Don't drop eapol or wpi packet\n");
 		} else {
-			nic_rxd_v2_parse_drop_pkt(prSwRfb,
-				prAdapter, ucBssIndex);
+			nic_rxd_v2_parse_drop_pkt(prSwRfb);
 
 			fgDrop = TRUE;
 			DBGLOG(RSN, INFO,
@@ -506,6 +503,7 @@ void nic_rxd_v2_check_wakeup_reason(
 	struct HW_MAC_CONNAC2X_RX_DESC *prRxStatus;
 	uint16_t u2PktLen = 0;
 	uint32_t u4HeaderOffset;
+	u_int8_t fgDrop = FALSE;
 
 	prChipInfo = prAdapter->chip_info;
 
@@ -513,15 +511,18 @@ void nic_rxd_v2_check_wakeup_reason(
 	if (!prRxStatus)
 		return;
 
+	fgDrop = nic_rxd_v2_sanity_check(prAdapter, prSwRfb);
+	if (fgDrop) {
+		DBGLOG(RX, WARN,
+			"%s: sanity check failed. drop!\n", __func__);
+		return;
+	}
+
 	prSwRfb->ucGroupVLD =
 		(uint8_t) HAL_MAC_CONNAC2X_RX_STATUS_GET_GROUP_VLD(prRxStatus);
 
 	switch (prSwRfb->ucPacketType) {
 	case RX_PKT_TYPE_SW_DEFINED:
-
-	prSwRfb->fgHdrTran = nic_rxd_v2_get_HdrTrans(prRxStatus);
-	prSwRfb->ucOFLD = nic_rxd_v2_get_ofld(prRxStatus);
-
 	if (prSwRfb->ucOFLD || prSwRfb->fgHdrTran) {
 		DBGLOG(RX, INFO, "Need to treat as data frame.\n");
 		/*

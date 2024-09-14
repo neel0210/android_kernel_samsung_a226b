@@ -35,6 +35,7 @@
 u_int8_t *gEmiCalResult;
 u_int32_t gEmiCalSize;
 u_int32_t gEmiCalOffset;
+u_int32_t gEmiGetCalOffset;
 bool gEmiCalUseEmiData;
 #endif
 
@@ -133,6 +134,25 @@ uint32_t wlanAccessCalibrationEMI(
 	return u4Status;
 }
 
+int wlanGetCalResultCb(uint32_t *pEmiCalOffset, uint32_t *pEmiCalSize)
+{
+	uint32_t u4Status = WLAN_STATUS_FAILURE;
+
+	/* Shift 4 for bypass Cal result CRC */
+	*pEmiCalOffset = gEmiGetCalOffset + 0x4;
+
+	/* 2k size for RFCR backup */
+	*pEmiCalSize = 2048;
+
+	DBGLOG(INIT, INFO,
+				"EMI_GET_CAL emiAddr[0x%x]emiLen[%d]\n",
+				*pEmiCalOffset,
+				*pEmiCalSize);
+
+	u4Status = WLAN_STATUS_SUCCESS;
+	return u4Status;
+}
+
 uint32_t wlanRcvPhyActionRsp(struct ADAPTER *prAdapter,
 	uint8_t ucCmdSeqNum)
 {
@@ -171,7 +191,8 @@ uint32_t wlanRcvPhyActionRsp(struct ADAPTER *prAdapter,
 		if (nicRxWaitResponseByWaitingInterval(prAdapter, ucPortIdx,
 					aucBuffer, u4EventSize,
 					&u4RxPktLength,
-					CFG_PRE_CAL_SLEEP_WAITING_INTERVAL) !=
+					CFG_PRE_CAL_SLEEP_WAITING_INTERVAL,
+					CFG_PRE_CAL_RX_RESPONSE_TIMEOUT) !=
 			   WLAN_STATUS_SUCCESS) {
 			DBGLOG(INIT, ERROR, "nicRxWaitResponse failed\n");
 			break;
@@ -224,6 +245,10 @@ uint32_t wlanRcvPhyActionRsp(struct ADAPTER *prAdapter,
 				HAL_PHY_ACTION_CAL_USE_BACKUP_RSP &&
 				prPhyEvent->ucStatus ==
 				HAL_PHY_ACTION_STATUS_RECAL)) {
+
+				/* Get Emi address and send to Conninfra */
+				gEmiGetCalOffset = prPhyEvent->u4EmiAddress &
+					WIFI_EMI_ADDR_MASK;
 
 				/* read from EMI, backup in driver */
 				wlanAccessCalibrationEMI(prPhyEvent,
@@ -745,8 +770,13 @@ int wlanPreCalPwrOn(void)
 	struct timespec64 time;
 	uint32_t rStatus = 0;
 
-	if (get_wifi_process_status() ||
-		get_wifi_powered_status())
+	while (update_wr_mtx_down_up_status(0, 0)) {
+		if (get_wifi_process_status())
+			return CONNINFRA_CB_RET_CAL_FAIL_POWER_OFF;
+		kalMsleep(50);
+	}
+
+	if (get_wifi_powered_status())
 		return CONNINFRA_CB_RET_CAL_FAIL_POWER_OFF;
 
 	prChipInfo = prDriverData->chip_info;
@@ -764,13 +794,15 @@ int wlanPreCalPwrOn(void)
 
 		if (retryCount > MAX_PRE_ON_COUNT) {
 			update_pre_cal_status(0);
+			update_wr_mtx_down_up_status(1, 0);
 			return CONNINFRA_CB_RET_CAL_FAIL_POWER_OFF;
 		}
 	}
 
 	/* wf driver power on */
-	if (prChipInfo->wmmcupwron() != 0) {
+	if (asicConnac2xPwrOnWmMcu(prChipInfo) != 0) {
 		update_pre_cal_status(0);
+		update_wr_mtx_down_up_status(1, 0);
 		return CONNINFRA_CB_RET_CAL_FAIL_POWER_OFF;
 	}
 
@@ -788,6 +820,7 @@ int wlanPreCalPwrOn(void)
 
 			if (retryCount > MAX_PRE_ON_COUNT) {
 				update_pre_cal_status(0);
+				update_wr_mtx_down_up_status(1, 0);
 				return CONNINFRA_CB_RET_CAL_FAIL_POWER_OFF;
 			}
 		}
@@ -955,6 +988,7 @@ int wlanPreCalPwrOn(void)
 
 		HAL_LP_OWN_SET(prAdapter, &fgResult);
 		update_pre_cal_status(0);
+		update_wr_mtx_down_up_status(1, 0);
 	}
 
 	switch (eFailReason) {
@@ -1060,6 +1094,7 @@ int wlanPreCal(void)
 			g_u4WlanInitFlag);
 
 		update_pre_cal_status(0);
+		update_wr_mtx_down_up_status(1, 0);
 		return CONNINFRA_CB_RET_CAL_FAIL_POWER_OFF;
 	}
 
@@ -1104,6 +1139,7 @@ int wlanPreCal(void)
 	DBGLOG(INIT, INFO, "PreCal end\n");
 
 	update_pre_cal_status(0);
+	update_wr_mtx_down_up_status(1, 0);
 
 	return CONNINFRA_CB_RET_CAL_PASS_POWER_OFF;
 }

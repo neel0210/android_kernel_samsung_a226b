@@ -1182,7 +1182,7 @@ ssize_t connsys_log_read(int conn_type, char *buf, size_t count)
 	if (atomic_read(&log_mode) != LOG_TO_FILE)
 		goto done;
 
-	size = (unsigned int)(count < RING_SIZE(ring) ? count : RING_SIZE(ring));
+	size = count < RING_SIZE(ring) ? count : RING_SIZE(ring);
 	if (RING_EMPTY(ring) || !ring_read_prepare(size, &ring_seg, ring)) {
 		pr_err("type(%d) no data, possibly taken by concurrent reader.\n", conn_type);
 		goto done;

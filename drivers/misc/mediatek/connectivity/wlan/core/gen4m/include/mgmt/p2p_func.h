@@ -128,14 +128,6 @@ p2pFuncUpdateBssInfoForJOIN(IN struct ADAPTER *prAdapter,
 		IN struct BSS_INFO *prP2pBssInfo,
 		IN struct SW_RFB *prAssocRspSwRfb);
 
-void
-p2pFuncAddPendingMgmtLinkEntry(struct ADAPTER *prAdapter,
-	uint8_t ucBssIdx, uint64_t u8Cookie);
-
-void
-p2pFuncRemovePendingMgmtLinkEntry(struct ADAPTER *prAdapter,
-	uint8_t ucBssIdx, uint64_t u8Cookie);
-
 void p2pFuncAcquireCh(IN struct ADAPTER *prAdapter,
 		IN uint8_t ucBssIdx,
 		IN struct P2P_CHNL_REQ_INFO *prChnlReqInfo);
@@ -145,8 +137,7 @@ p2pFuncDisconnect(IN struct ADAPTER *prAdapter,
 		IN struct BSS_INFO *prP2pBssInfo,
 		IN struct STA_RECORD *prStaRec,
 		IN u_int8_t fgSendDeauth,
-		IN uint16_t u2ReasonCode,
-		IN u_int8_t fgIsLocallyGenerated);
+		IN uint16_t u2ReasonCode);
 
 struct BSS_INFO *p2pFuncBSSIDFindBssInfo(IN struct ADAPTER *prAdapter,
 		IN uint8_t *pucBSSID);
@@ -320,10 +311,6 @@ u_int8_t p2pFuncIsAPMode(IN struct P2P_CONNECTION_SETTINGS *prP2pConnSettings);
 
 u_int8_t p2pFuncIsDualAPMode(IN struct ADAPTER *prAdapter);
 
-u_int8_t p2pFuncIsApIsolate(struct ADAPTER *prAdapter,
-		struct SW_RFB *prCurrSwRfb,
-		struct BSS_INFO *prBssInfoIso);
-
 void
 p2pFuncParseBeaconContent(IN struct ADAPTER *prAdapter,
 		IN struct BSS_INFO *prP2pBssInfo,
@@ -421,8 +408,7 @@ void
 p2pFuncDissolve(IN struct ADAPTER *prAdapter,
 		IN struct BSS_INFO *prP2pBssInfo,
 		IN u_int8_t fgSendDeauth,
-		IN uint16_t u2ReasonCode,
-		IN u_int8_t fgIsLocallyGenerated);
+		IN uint16_t u2ReasonCode);
 
 struct IE_HDR *
 p2pFuncGetSpecIE(IN struct ADAPTER *prAdapter,
@@ -505,8 +491,6 @@ void p2pFunIndicateAcsResult(IN struct GLUE_INFO *prGlueInfo,
 		IN struct P2P_ACS_REQ_INFO *prAcsReqInfo);
 
 void p2pFunCalAcsChnScores(IN struct ADAPTER *prAdapter);
-
-uint8_t p2pFuncIsCsaBlockScan(IN struct ADAPTER *prAdapter);
 
 enum ENUM_CHNL_SWITCH_POLICY
 p2pFunDetermineChnlSwitchPolicy(IN struct ADAPTER *prAdapter,

@@ -373,6 +373,11 @@ void nicReleaseAdapterMemory(IN struct ADAPTER *prAdapter)
 					prAdapter->u4MemAllocDynamicCount) {
 				struct MEM_TRACK *prMemTrack = NULL;
 
+				DBGLOG(MEM, INFO,
+					"u4MemFreeDynamicCount %d u4MemAllocDynamicCount %d\n",
+					prAdapter->u4MemFreeDynamicCount,
+					prAdapter->u4MemAllocDynamicCount);
+
 				DBGLOG(MEM, ERROR, "----- Memory Leak -----\n");
 				LINK_FOR_EACH_ENTRY(prMemTrack,
 						&prAdapter->rMemTrackLink,
@@ -839,6 +844,9 @@ struct CMD_INFO *nicGetPendingCmdInfo(IN struct ADAPTER
 	struct QUE *prTempCmdQue = &rTempCmdQue;
 	struct QUE_ENTRY *prQueueEntry = (struct QUE_ENTRY *) NULL;
 	struct CMD_INFO *prCmdInfo = (struct CMD_INFO *) NULL;
+#if CFG_DBG_MGT_BUF
+	struct MEM_TRACK *prMemTrack = NULL;
+#endif
 
 	KAL_SPIN_LOCK_DECLARATION();
 
@@ -868,10 +876,29 @@ struct CMD_INFO *nicGetPendingCmdInfo(IN struct ADAPTER
 
 	KAL_RELEASE_SPIN_LOCK(prAdapter, SPIN_LOCK_CMD_PENDING);
 
-	if (prCmdInfo)
+	if (prCmdInfo) {
 		DBGLOG(TX, INFO, "Get command: %p, %ps, cmd=0x%02X, seq=%u",
 				prCmdInfo, prCmdInfo->pfCmdDoneHandler,
 				prCmdInfo->ucCID, prCmdInfo->ucCmdSeqNum);
+
+#if CFG_DBG_MGT_BUF
+		if (prCmdInfo->pucInfoBuffer &&
+				!IS_FROM_BUF(prAdapter,
+					prCmdInfo->pucInfoBuffer))
+			prMemTrack =
+				(struct MEM_TRACK *)
+					((uint8_t *)prCmdInfo->pucInfoBuffer -
+						sizeof(struct MEM_TRACK));
+
+		if (prMemTrack) {
+			prMemTrack->u2CmdIdAndWhere &= 0x00FF;
+			/* 0x60 means the CmdId is in PendingCmdQuene
+			 *  and already report to module
+			 */
+			prMemTrack->u2CmdIdAndWhere |= 0x6000;
+		}
+#endif
+	}
 	return prCmdInfo;
 }
 
@@ -1684,6 +1711,9 @@ uint32_t nicActivateNetworkEx(IN struct ADAPTER *prAdapter,
 					 prBssInfo->aucOwnMacAddr,
 					 STA_REC_INDEX_NOT_FOUND,
 					 CIPHER_SUITE_NONE, 0xFF);
+#if CFG_SUPPORT_LIMITED_PKT_PID
+	nicTxInitPktPID(prAdapter, prBssInfo->ucBMCWlanIndex);
+#endif /* CFG_SUPPORT_LIMITED_PKT_PID */
 	rCmdActivateCtrl.ucBMCWlanIndex = prBssInfo->ucBMCWlanIndex;
 
 	kalMemZero(&rCmdActivateCtrl.ucReserved,
@@ -1833,25 +1863,17 @@ uint32_t nicUpdateBssEx(IN struct ADAPTER *prAdapter,
 	prWifiVar = &prAdapter->rWifiVar;
 	prBssInfo = prAdapter->aprBssInfo[ucBssIndex];
 
-	if (prBssInfo->eConnectionState == MEDIA_STATE_CONNECTED
-		&& NIC_IS_BSS_BELOW_11AC(prBssInfo)) {
-		if (NIC_IS_BSS_11B(prBssInfo))
-			prAdapter->u4AdjustCtrlBitmap |= BIT(ucBssIndex);
-
-		prBssInfo->u4NetifStopTh = NIC_BSS_LOW_RATE_TOKEN_CNT;
-		prBssInfo->u4NetifStartTh = prBssInfo->u4NetifStopTh / 2;
-	} else {
-		prBssInfo->u4NetifStopTh = prWifiVar->u4NetifStopTh;
-		prBssInfo->u4NetifStartTh = prWifiVar->u4NetifStartTh;
-		prAdapter->u4AdjustCtrlBitmap &= ~BIT(ucBssIndex);
-	}
-
 	if (prAdapter->rWifiVar.ucNSS == 1 && cnmIsMccMode(prAdapter))
 		halSetTxRingBssTokenCnt(prAdapter, NIC_BSS_MCC_MODE_TOKEN_CNT);
-	else if (prAdapter->u4AdjustCtrlBitmap != 0)
+	else if (prBssInfo->ucPhyTypeSet == PHY_TYPE_SET_802_11B) {
 		halSetTxRingBssTokenCnt(prAdapter, NIC_BSS_LOW_RATE_TOKEN_CNT);
-	else
+		prWifiVar->u4NetifStopTh = NIC_BSS_LOW_RATE_TOKEN_CNT;
+		prWifiVar->u4NetifStartTh = prWifiVar->u4NetifStopTh / 2;
+	} else {
 		halSetTxRingBssTokenCnt(prAdapter, HIF_TX_MSDU_TOKEN_NUM);
+		prWifiVar->u4NetifStopTh = prWifiVar->u4NetifStopThBackup;
+		prWifiVar->u4NetifStartTh = prWifiVar->u4NetifStartThBackup;
+	}
 
 	kalMemZero(&rCmdSetBssInfo,
 		   sizeof(struct CMD_SET_BSS_INFO));
@@ -2003,7 +2025,7 @@ uint32_t nicUpdateBssEx(IN struct ADAPTER *prAdapter,
 			DBGLOG(SW4, INFO, "[SG]SG Get Dut NSS %d\n", ucDutNss);
 			if (rCmdSetBssInfo.ucIotApAct == WLAN_IOT_AP_DIS_SG) {
 				DBGLOG(SW4, INFO,
-					"[SG]Hit SG blocklist, disable SG\n");
+					"[SG]Hit SG blacklist, disable SG\n");
 				ucSGEnable = FALSE;
 			}
 
@@ -2067,6 +2089,10 @@ uint32_t nicUpdateBssEx(IN struct ADAPTER *prAdapter,
 		rCmdSetBssInfo.ucBssColorInfo = prBssInfo->ucBssColorInfo;
 		rCmdSetBssInfo.u2HeBasicMcsSet =
 			prBssInfo->u2HeBasicMcsSet;
+		if (IS_BSS_AIS(prBssInfo) &&
+		    IS_FEATURE_ENABLED(prAdapter->rWifiVar.ucVcoreBoostEnable))
+			DBGLOG(BSS, INFO, "VcoreBoost[%d]\n",
+				kalCheckVcoreBoost(prAdapter, ucBssIndex));
 	}
 #endif
 
@@ -2077,15 +2103,12 @@ uint32_t nicUpdateBssEx(IN struct ADAPTER *prAdapter,
 
 	DBGLOG(BSS, INFO,
 	       "Update Bss[%u] ConnState[%u] OPmode[%u] BSSID[" MACSTR
-	       "] AuthMode[%u] EncStatus[%u] IotAct[%u] NetIfTh[%u:%u]\n",
-	       ucBssIndex,
+	       "] AuthMode[%u] EncStatus[%u] IotAct[%u]\n", ucBssIndex,
 	       prBssInfo->eConnectionState,
 	       prBssInfo->eCurrentOPMode, MAC2STR(prBssInfo->aucBSSID),
 	       rCmdSetBssInfo.ucAuthMode,
 	       rCmdSetBssInfo.ucEncStatus,
-	       rCmdSetBssInfo.ucIotApAct,
-	       prBssInfo->u4NetifStopTh,
-	       prBssInfo->u4NetifStartTh);
+	       rCmdSetBssInfo.ucIotApAct);
 
 	u4Status = wlanSendSetQueryCmd(prAdapter,
 				       CMD_ID_SET_BSS_INFO,
@@ -2116,11 +2139,6 @@ uint32_t nicUpdateBssEx(IN struct ADAPTER *prAdapter,
 			qmFreeAllByBssIdx(prAdapter, ucBssIndex);
 		kalClearSecurityFramesByBssIdx(prAdapter->prGlueInfo,
 					       ucBssIndex);
-#if CFG_ENABLE_GTK_FRAME_FILTER
-		if (prBssInfo->prIpV4NetAddrList)
-			FREE_IPV4_NETWORK_ADDR_LIST(
-				prBssInfo->prIpV4NetAddrList);
-#endif
 #if CFG_SUPPORT_DBDC
 		cnmDbdcRuntimeCheckDecision(prAdapter, ucBssIndex);
 #endif
@@ -2145,7 +2163,7 @@ uint32_t nicPmIndicateBssCreated(IN struct ADAPTER
 				 *prAdapter, IN uint8_t ucBssIndex)
 {
 	struct BSS_INFO *prBssInfo;
-	struct CMD_INDICATE_PM_BSS_CREATED rCmdIndicatePmBssCreated = {0};
+	struct CMD_INDICATE_PM_BSS_CREATED rCmdIndicatePmBssCreated;
 
 	ASSERT(prAdapter);
 	ASSERT(ucBssIndex <= prAdapter->ucHwBssIdNum);
@@ -2186,7 +2204,8 @@ uint32_t nicPmIndicateBssConnected(IN struct ADAPTER
 				   *prAdapter, IN uint8_t ucBssIndex)
 {
 	struct BSS_INFO *prBssInfo;
-	struct CMD_INDICATE_PM_BSS_CONNECTED rCmdIndicatePmBssConnected = {0};
+	struct CMD_INDICATE_PM_BSS_CONNECTED
+		rCmdIndicatePmBssConnected;
 
 	ASSERT(prAdapter);
 	ASSERT(ucBssIndex <= prAdapter->ucHwBssIdNum);
@@ -2264,7 +2283,7 @@ uint32_t nicPmIndicateBssConnected(IN struct ADAPTER
 uint32_t nicPmIndicateBssAbort(IN struct ADAPTER *prAdapter,
 			       IN uint8_t ucBssIndex)
 {
-	struct CMD_INDICATE_PM_BSS_ABORT rCmdIndicatePmBssAbort = {0};
+	struct CMD_INDICATE_PM_BSS_ABORT rCmdIndicatePmBssAbort;
 
 	ASSERT(prAdapter);
 	ASSERT(ucBssIndex <= prAdapter->ucHwBssIdNum);
@@ -2419,7 +2438,7 @@ nicConfigProcSetCamCfgWrite(IN struct ADAPTER *prAdapter,
 	IN u_int8_t enabled, IN uint8_t ucBssIndex)
 {
 	enum PARAM_POWER_MODE ePowerMode;
-	struct CMD_PS_PROFILE rPowerSaveMode = { 0, 0, { 0, 0 } };
+	struct CMD_PS_PROFILE rPowerSaveMode;
 
 	if ((!prAdapter))
 		return WLAN_STATUS_FAILURE;
@@ -2459,7 +2478,7 @@ nicConfigProcSetCamCfgWrite(IN struct ADAPTER *prAdapter,
 uint32_t nicEnterCtiaMode(IN struct ADAPTER *prAdapter,
 			  u_int8_t fgEnterCtia, u_int8_t fgEnCmdEvent)
 {
-	struct CMD_SW_DBG_CTRL rCmdSwCtrl = {0};
+	struct CMD_SW_DBG_CTRL rCmdSwCtrl;
 	/* CMD_ACCESS_REG rCmdAccessReg; */
 	uint32_t rWlanStatus;
 	uint8_t ucBssIdx;
@@ -2589,7 +2608,7 @@ uint32_t nicEnterCtiaModeOfScan(IN struct ADAPTER
 uint32_t nicEnterCtiaModeOfRoaming(IN struct ADAPTER
 	*prAdapter, u_int8_t fgEnterCtia, u_int8_t fgEnCmdEvent)
 {
-	struct CMD_SW_DBG_CTRL rCmdSwCtrl = {0};
+	struct CMD_SW_DBG_CTRL rCmdSwCtrl;
 	uint32_t rWlanStatus;
 
 	ASSERT(prAdapter);
@@ -2693,7 +2712,7 @@ uint32_t nicEnterCtiaModeOfBCNTimeout(IN struct ADAPTER
 uint32_t nicEnterCtiaModeOfAutoTxPower(IN struct ADAPTER
 	*prAdapter, u_int8_t fgEnterCtia, u_int8_t fgEnCmdEvent)
 {
-	struct CMD_SW_DBG_CTRL rCmdSwCtrl = {0};
+	struct CMD_SW_DBG_CTRL rCmdSwCtrl;
 	uint32_t rWlanStatus;
 
 	ASSERT(prAdapter);
@@ -2738,7 +2757,7 @@ uint32_t nicEnterCtiaModeOfAutoTxPower(IN struct ADAPTER
 uint32_t nicEnterCtiaModeOfFIFOFullNoAck(IN struct ADAPTER
 		*prAdapter, u_int8_t fgEnterCtia, u_int8_t fgEnCmdEvent)
 {
-	struct CMD_SW_DBG_CTRL rCmdSwCtrl = {0};
+	struct CMD_SW_DBG_CTRL rCmdSwCtrl;
 	uint32_t rWlanStatus;
 
 	ASSERT(prAdapter);
@@ -2783,7 +2802,7 @@ uint32_t nicEnterCtiaModeOfFIFOFullNoAck(IN struct ADAPTER
 uint32_t nicEnterTPTestMode(IN struct ADAPTER *prAdapter,
 			    IN uint8_t ucFuncMask)
 {
-	struct CMD_SW_DBG_CTRL rCmdSwCtrl = {0};
+	struct CMD_SW_DBG_CTRL rCmdSwCtrl;
 	uint32_t rWlanStatus;
 	uint8_t ucBssIdx;
 	struct BSS_INFO *prBssInfo;
@@ -3006,7 +3025,7 @@ uint32_t nicQmUpdateWmmParms(IN struct ADAPTER *prAdapter,
 			     IN uint8_t ucBssIndex)
 {
 	struct BSS_INFO *prBssInfo;
-	struct CMD_UPDATE_WMM_PARMS rCmdUpdateWmmParms = {0};
+	struct CMD_UPDATE_WMM_PARMS rCmdUpdateWmmParms;
 	struct mt66xx_chip_info *prChipInfo;
 	uint32_t u4TxHifRes = 0, u4Idx = 0;
 
@@ -3075,7 +3094,7 @@ uint32_t nicQmUpdateMUEdcaParams(IN struct ADAPTER *prAdapter,
 	IN uint8_t ucBssIndex)
 {
 	struct BSS_INFO *prBssInfo;
-	struct _CMD_MQM_UPDATE_MU_EDCA_PARMS_T rCmdUpdateMUEdcaParms = {0};
+	struct _CMD_MQM_UPDATE_MU_EDCA_PARMS_T rCmdUpdateMUEdcaParms;
 
 	ASSERT(prAdapter);
 
@@ -3128,7 +3147,7 @@ uint32_t nicRlmUpdateSRParams(IN struct ADAPTER *prAdapter,
 	IN uint8_t ucBssIndex)
 {
 	struct BSS_INFO *prBssInfo;
-	struct _CMD_RLM_UPDATE_SR_PARMS_T rCmdUpdateSRParms = {0};
+	struct _CMD_RLM_UPDATE_SR_PARMS_T rCmdUpdateSRParms;
 
 	ASSERT(prAdapter);
 
@@ -4658,7 +4677,7 @@ void nicUpdateLinkQuality(IN struct ADAPTER *prAdapter,
 				cRssi =
 					(int8_t) (((int16_t)
 					(cRssi) * u2AdjustRssi) / 10);
-				DBGLOG(RLM, TRACE,
+				DBGLOG(RLM, INFO,
 					"Rssi=%d, NewRssi=%d\n",
 					prEventLinkQuality->rLq[ucBssIndex].
 					cRssi,
@@ -5268,7 +5287,7 @@ void nicSerInit(IN struct ADAPTER *prAdapter)
 #endif
 	) {
 		wlanoidSerExtCmd(prAdapter, SER_ACTION_SET,
-				SER_SET_DISABLE, 0, FALSE);
+				SER_SET_DISABLE, 0);
 	}
 
 }
@@ -5311,3 +5330,89 @@ void nicRxdChNumTranslate(
 		*pucHwChannelNum = (((*pucHwChannelNum-181) << 2) + 1);
 #endif
 }
+
+#if CFG_SUPPORT_DROP_INVALID_MSDUINFO
+void nicDumpMsduInfo(IN struct MSDU_INFO *prMsduInfo)
+{
+	struct sk_buff *prSkb;
+
+	if (!prMsduInfo) {
+		DBGLOG(NIC, ERROR, "Invalid MsduInfo, skip dump.");
+		return;
+	}
+
+	/* [1]prPacket(txd)            [2]eSrc
+	 * [3]ucUserPriority           [4]ucTC
+	 * [5]ucPacketType             [6]ucStaRecIndex
+	 * [7]ucBssIndex               [8]ucWlanIndex
+	 * [9]ucPacketFormat           [10]fgIs802_1x
+	 * [11]fgIs802_1x_NonProtected [12]fgIs802_11
+	 * [13]fgIs802_3               [14]fgIsVlanExists
+	 * [15]u4Option                [16]cPowerOffset
+	 * [17]u2SwSN                  [18]ucRetryLimit
+	 * [19]u4RemainingLifetime     [20]ucControlFlag
+	 * [21]ucRateMode              [22]u4FixedRateOption
+	 * [23]fgIsTXDTemplateValid    [24]ucMacHeaderLength
+	 * [25]ucLlcLength             [26]u2FrameLength
+	 * [27]aucEthDestAddr          [28]u4PageCount
+	 * [29]ucTxSeqNum              [30]ucPID
+	 * [31]ucWmmQueSet             [32]pfTxDoneHandler
+	 * [33]u4TxDoneTag             [34]ucPktType
+	 */
+
+#define TEMP_LINE1 \
+	"[1][%p], [2][%u], [3][%u], [4][%u], [5][%u], " \
+	"[6][%u], [7][%u], [8][%u], [9][%u], [10][%u]\n"
+
+#define TEMP_LINE2 \
+	"[11][%u], [12][%u], [13][%u], [14][%u], [15][%u], " \
+	"[16][%d], [17][%u], [18][%u], [19][%u], [20][%u]\n"
+
+#define TEMP_LINE3 \
+	"[21][%u], [22][%u], [23][%u], [24][%u], [25][%u], " \
+	"[26][%u], [27][" MACSTR "], [28][%u], [29][%u], [30][%u]\n"
+
+#define TEMP_LINE4 \
+	"[31][%u], [32][%p], [33][%u], [34][%u]\n"
+
+	DBGLOG(NIC, INFO, TEMP_LINE1,
+		prMsduInfo->prPacket, prMsduInfo->eSrc,
+		prMsduInfo->ucUserPriority, prMsduInfo->ucTC,
+		prMsduInfo->ucPacketType, prMsduInfo->ucStaRecIndex,
+		prMsduInfo->ucBssIndex, prMsduInfo->ucWlanIndex,
+		prMsduInfo->ucPacketFormat, prMsduInfo->fgIs802_1x
+		);
+
+	DBGLOG(NIC, INFO, TEMP_LINE2,
+		prMsduInfo->fgIs802_1x_NonProtected, prMsduInfo->fgIs802_11,
+		prMsduInfo->fgIs802_3, prMsduInfo->fgIsVlanExists,
+		prMsduInfo->u4Option, prMsduInfo->cPowerOffset,
+		prMsduInfo->u2SwSN, prMsduInfo->ucRetryLimit,
+		prMsduInfo->u4RemainingLifetime, prMsduInfo->ucControlFlag
+		);
+
+	DBGLOG(NIC, INFO, TEMP_LINE3,
+		prMsduInfo->ucRateMode, prMsduInfo->u4FixedRateOption,
+		prMsduInfo->fgIsTXDTemplateValid, prMsduInfo->ucMacHeaderLength,
+		prMsduInfo->ucLlcLength, prMsduInfo->u2FrameLength,
+		prMsduInfo->aucEthDestAddr, prMsduInfo->u4PageCount,
+		prMsduInfo->ucTxSeqNum, prMsduInfo->ucPID
+		);
+
+	DBGLOG(NIC, INFO, TEMP_LINE4,
+		prMsduInfo->ucWmmQueSet, prMsduInfo->pfTxDoneHandler,
+		prMsduInfo->u4TxDoneTag, prMsduInfo->ucPktType
+		);
+#undef TEMP_LINE1
+#undef TEMP_LINE2
+#undef TEMP_LINE3
+#undef TEMP_LINE4
+
+	/* dump txd */
+	if (prMsduInfo->ucPacketType == TX_PACKET_TYPE_DATA
+		&& prMsduInfo->prPacket) {
+		prSkb = prMsduInfo->prPacket;
+		DBGLOG_MEM8(NIC, INFO, prSkb->data, 64);
+	}
+}
+#endif /* CFG_SUPPORT_DROP_INVALID_MSDUINFO */

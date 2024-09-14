@@ -296,7 +296,6 @@
 #define TX_POWER_DROP_CTRL                              0x2
 #endif
 
-#define IW_PRIV_BUF_SIZE			2000
 /*******************************************************************************
  *                             D A T A   T Y P E S
  *******************************************************************************
@@ -354,7 +353,7 @@ enum _ENUM_NAN_CONTROL_ID {
 	ENUM_NAN_DATA_END = 0x12,
 	ENUM_NAN_DATA_UPDTAE = 0x13,
 
-	/* RANGING 0x20*/
+	/* RANGING 0x20 */
 	ENUM_NAN_RG_REQ = 0x20,
 	ENUM_NAN_RG_CANCEL = 0x21,
 	ENUM_NAN_RG_RESP = 0x22,
@@ -363,7 +362,7 @@ enum _ENUM_NAN_CONTROL_ID {
 	ENUM_NAN_ENABLE_REQ = 0x30,
 	ENUM_NAN_DISABLE_REQ = 0x31,
 
-	/* CONFIG 0x40*/
+	/* CONFIG 0x40 */
 	ENUM_NAN_CONFIG_MP = 0x40,
 	ENUM_NAN_CONFIG_HC = 0x41,
 	ENUM_NAN_CONFIG_RANFAC = 0x42,
@@ -485,6 +484,12 @@ int
 priv_ate_set(IN struct net_device *prNetDev,
 	     IN struct iw_request_info *prIwReqInfo,
 	     IN union iwreq_data *prIwReqData, IN char *pcExtra);
+#endif
+#if 1
+int priv_driver_set_ce_or_fcc_country(struct GLUE_INFO *prGlueInfo,   uint16_t u2CountryCode);
+uint32_t country_code_is_in_fcc_group(uint16_t country_code);
+uint32_t country_code_is_in_ce_group(uint16_t country_code);
+extern uint16_t priCountryCode;
 #endif
 
 #if CFG_SUPPORT_NAN

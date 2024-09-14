@@ -83,11 +83,7 @@ struct MSG_P2P_CHNL_REQUEST {
 	enum ENUM_CH_REQ_TYPE eChnlReqType;
 };
 
-#if (CFG_TC10_FEATURE == 1)
-#define P2P_DEV_EXTEND_CHAN_TIME	2000
-#else
 #define P2P_DEV_EXTEND_CHAN_TIME	500
-#endif
 
 #if CFG_SUPPORT_WFD
 
@@ -157,11 +153,6 @@ struct P2P_OFF_CHNL_TX_REQ_INFO {
 	uint64_t u8Cookie; /* cookie used to match with supplicant */
 	uint32_t u4Duration; /* wait time for tx request */
 	uint8_t ucBssIndex;
-};
-
-struct P2P_PENDING_MGMT_INFO {
-	struct LINK_ENTRY rLinkEntry;
-	uint64_t u8PendingMgmtCookie;
 };
 
 struct P2P_DEV_FSM_INFO {

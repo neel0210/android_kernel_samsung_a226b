@@ -2953,6 +2953,7 @@ void connac2x_show_wfdma_ring_info(
 	uint32_t u4DmaCfgCrAddr;
 	struct wfdma_group_info *group;
 	uint32_t u4_hw_desc_base_value = 0;
+	uint64_t u8_hw_desc_base_value = 0;
 	uint32_t u4_hw_cnt_value = 0;
 	uint32_t u4_hw_cidx_value = 0;
 	uint32_t u4_hw_didx_value = 0;
@@ -2990,6 +2991,10 @@ void connac2x_show_wfdma_ring_info(
 		HAL_MCR_RD(prAdapter, u4DmaCfgCrAddr+0x08, &u4_hw_cidx_value);
 		HAL_MCR_RD(prAdapter, u4DmaCfgCrAddr+0x0c, &u4_hw_didx_value);
 
+		u8_hw_desc_base_value = (u4_hw_cnt_value & 0xF0000);
+		u8_hw_desc_base_value = (u8_hw_desc_base_value << 16)
+			| u4_hw_desc_base_value;
+		u4_hw_cnt_value = u4_hw_cnt_value & 0x0FFF;
 		group->cnt = u4_hw_cnt_value;
 		group->cidx = u4_hw_cidx_value;
 		group->didx = u4_hw_didx_value;
@@ -2998,10 +3003,10 @@ void connac2x_show_wfdma_ring_info(
 			(u4_hw_cidx_value - u4_hw_didx_value) :
 			(u4_hw_cidx_value - u4_hw_didx_value + u4_hw_cnt_value);
 
-		DBGLOG(HAL, INFO, "%4d %20s %8x %10x %6x %6x %6x %6x\n",
+		DBGLOG(HAL, INFO, "%4d %20s %8x %10lx %6x %6x %6x %6x\n",
 			idx,
 			group->name,
-			u4DmaCfgCrAddr, u4_hw_desc_base_value,
+			u4DmaCfgCrAddr, u8_hw_desc_base_value,
 			u4_hw_cnt_value, u4_hw_cidx_value,
 			u4_hw_didx_value, queue_cnt);
 
@@ -3030,6 +3035,10 @@ void connac2x_show_wfdma_ring_info(
 		HAL_MCR_RD(prAdapter, u4DmaCfgCrAddr+0x08, &u4_hw_cidx_value);
 		HAL_MCR_RD(prAdapter, u4DmaCfgCrAddr+0x0c, &u4_hw_didx_value);
 
+		u8_hw_desc_base_value = (u4_hw_cnt_value & 0xF0000);
+		u8_hw_desc_base_value = (u8_hw_desc_base_value << 16)
+			| u4_hw_desc_base_value;
+		u4_hw_cnt_value = u4_hw_cnt_value & 0xFFFF;
 		group->cnt = u4_hw_cnt_value;
 		group->cidx = u4_hw_cidx_value;
 		group->didx = u4_hw_didx_value;
@@ -3039,10 +3048,10 @@ void connac2x_show_wfdma_ring_info(
 			(u4_hw_didx_value - u4_hw_cidx_value
 			+ u4_hw_cnt_value - 1);
 
-		DBGLOG(HAL, INFO, "%4d %20s %8x %10x %6x %6x %6x %6x\n",
+		DBGLOG(HAL, INFO, "%4d %20s 0x%9x %10lx %6x %6x %6x %6x\n",
 			idx,
 			group->name,
-			u4DmaCfgCrAddr, u4_hw_desc_base_value,
+			u4DmaCfgCrAddr, u8_hw_desc_base_value,
 			u4_hw_cnt_value, u4_hw_cidx_value,
 			u4_hw_didx_value, queue_cnt);
 	}
@@ -3076,6 +3085,9 @@ void connac2x_show_wfdma_desc(IN struct ADAPTER *prAdapter)
 		u4SwIdx = prGroup->didx == 0 ?
 			prGroup->cnt - 1 : prGroup->didx - 1;
 		kalDumpTxRing(prAdapter->prGlueInfo, prTxRing, u4SwIdx, true);
+		u4SwIdx = prGroup->didx == prGroup->cnt - 1 ?
+			0 : prGroup->didx + 1;
+		kalDumpTxRing(prAdapter->prGlueInfo, prTxRing, u4SwIdx, true);
 	}
 
 	for (i = 0; i < prBusInfo->wfmda_host_rx_group_len; i++) {
@@ -3088,6 +3100,9 @@ void connac2x_show_wfdma_desc(IN struct ADAPTER *prAdapter)
 		kalDumpRxRing(prAdapter->prGlueInfo, prRxRing, u4SwIdx, true);
 		u4SwIdx = prGroup->didx == 0 ?
 			prGroup->cnt - 1 : prGroup->didx - 1;
+		kalDumpRxRing(prAdapter->prGlueInfo, prRxRing, u4SwIdx, true);
+		u4SwIdx = prGroup->didx == prGroup->cnt - 1 ?
+			0 : prGroup->didx + 1;
 		kalDumpRxRing(prAdapter->prGlueInfo, prRxRing, u4SwIdx, true);
 	}
 }
@@ -3165,19 +3180,69 @@ static void connac2x_dump_wfdma_dbg_value(
 	set_debug_cr = pdma_base_cr + 0x124;
 	get_debug_cr = pdma_base_cr + 0x128;
 	kalMemZero(buf, BUF_SIZE);
-	pos += kalSnprintf(buf + pos, 50,
+	pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
 			"set_debug_cr:0x%08x get_debug_cr:0x%08x; ",
 			set_debug_cr, get_debug_cr);
 	for (set_debug_flag_value = 0x100; set_debug_flag_value <= 0x112;
 			set_debug_flag_value++) {
 		HAL_MCR_WR(prAdapter, set_debug_cr, set_debug_flag_value);
 		HAL_MCR_RD(prAdapter, get_debug_cr, &get_debug_value);
-		pos += kalSnprintf(buf + pos, 40, "Set:0x%03x, result=0x%08x%s",
+		pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
+			"Set:0x%03x, result=0x%08x%s",
 			set_debug_flag_value,
 			get_debug_value,
 			set_debug_flag_value == 0x112 ? "\n" : "; ");
 	}
 	DBGLOG(HAL, INFO, "%s", buf);
+
+	pos = 0;
+	pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
+			"set_debug_cr:0x%08x get_debug_cr:0x%08x; ",
+			set_debug_cr, get_debug_cr);
+	for (set_debug_flag_value = 0x113; set_debug_flag_value <= 0x125;
+			set_debug_flag_value++) {
+		HAL_MCR_WR(prAdapter, set_debug_cr, set_debug_flag_value);
+		HAL_MCR_RD(prAdapter, get_debug_cr, &get_debug_value);
+		pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
+			"Set:0x%03x, result=0x%08x%s",
+			set_debug_flag_value,
+			get_debug_value,
+			set_debug_flag_value == 0x125 ? "\n" : "; ");
+	}
+	DBGLOG(HAL, INFO, "%s", buf);
+
+	pos = 0;
+	pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
+			"set_debug_cr:0x%08x get_debug_cr:0x%08x; ",
+			set_debug_cr, get_debug_cr);
+	for (set_debug_flag_value = 0x125; set_debug_flag_value <= 0x131;
+			set_debug_flag_value++) {
+		HAL_MCR_WR(prAdapter, set_debug_cr, set_debug_flag_value);
+		HAL_MCR_RD(prAdapter, get_debug_cr, &get_debug_value);
+		pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
+			"Set:0x%03x, result=0x%08x%s",
+			set_debug_flag_value,
+			get_debug_value,
+			set_debug_flag_value == 0x131 ? "\n" : "; ");
+	}
+	DBGLOG(HAL, INFO, "%s", buf);
+
+	pos = 0;
+	pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
+			"set_debug_cr:0x%08x get_debug_cr:0x%08x; ",
+			set_debug_cr, get_debug_cr);
+	for (set_debug_flag_value = 0x152; set_debug_flag_value <= 0x154;
+			set_debug_flag_value++) {
+		HAL_MCR_WR(prAdapter, set_debug_cr, set_debug_flag_value);
+		HAL_MCR_RD(prAdapter, get_debug_cr, &get_debug_value);
+		pos += kalSnprintf(buf + pos, BUF_SIZE - pos,
+			"Set:0x%03x, result=0x%08x%s",
+			set_debug_flag_value,
+			get_debug_value,
+			set_debug_flag_value == 0x154 ? "\n" : "; ");
+	}
+	DBGLOG(HAL, INFO, "%s", buf);
+
 	kalMemFree(buf, VIR_MEM_TYPE, BUF_SIZE);
 }
 
@@ -4062,7 +4127,6 @@ void connac2x_DumpCrRange(
 
 #ifdef CFG_SUPPORT_LINK_QUALITY_MONITOR
 int connac2x_get_rx_rate_info(IN struct ADAPTER *prAdapter,
-		IN uint8_t ucBssIdx,
 		OUT uint32_t *pu4Rate, OUT uint32_t *pu4Nss,
 		OUT uint32_t *pu4RxMode, OUT uint32_t *pu4FrMode,
 		OUT uint32_t *pu4Sgi)
@@ -4077,7 +4141,7 @@ int connac2x_get_rx_rate_info(IN struct ADAPTER *prAdapter,
 		(!pu4Sgi))
 		return -1;
 
-	prStaRec = aisGetStaRecOfAP(prAdapter, ucBssIdx);
+	prStaRec = aisGetStaRecOfAP(prAdapter, AIS_DEFAULT_INDEX);
 	if (prStaRec) {
 		ucWlanIdx = prStaRec->ucWlanIndex;
 	} else {

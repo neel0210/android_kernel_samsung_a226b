@@ -184,6 +184,9 @@ static int priv_driver_set_pwr_level(
 static int priv_driver_set_pwr_temp(
 	IN struct net_device *prNetDev, IN char *pcCommand, IN int i4TotalLen);
 #endif
+
+static int priv_driver_set_multista_use_case(
+	IN struct net_device *prNetDev, IN char *pcCommand, IN int i4TotalLen);
 /*******************************************************************************
  *                       P R I V A T E   D A T A
  *******************************************************************************
@@ -742,6 +745,34 @@ int priv_support_ioctl(IN struct net_device *prNetDev,
 	}			/* end of switch */
 
 }				/* priv_support_ioctl */
+
+#if CFG_SUPPORT_RSSI_DISCONNECT
+int priv_driver_get_rssiDisconnect(IN struct net_device *prNetDev,
+				IN char *pcCommand, IN int i4TotalLen) {
+	struct GLUE_INFO *prGlueInfo;
+	uint32_t rStatus = WLAN_STATUS_SUCCESS;
+	uint32_t u4BufLen = 0;
+	int32_t i4Rssi = 0;
+	int32_t i4BytesWritten = 0;
+
+	if (!prNetDev)
+		return -EPERM;
+	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
+		return -EPERM;
+	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
+
+	rStatus = kalIoctl(prGlueInfo, wlanoidQueryRssiDisconnect, &i4Rssi,
+			sizeof(i4Rssi), TRUE, TRUE, TRUE, &u4BufLen);
+	if (rStatus != WLAN_STATUS_SUCCESS)
+		return -EPERM;
+
+	DBGLOG(REQ, INFO, "i4Rssi = %d\n", i4Rssi);
+	i4BytesWritten = snprintf(pcCommand, i4TotalLen,
+				 "DISCONRSSI %d", i4Rssi);
+	DBGLOG(REQ, INFO, "%s: Command result is %s\n", __func__, pcCommand);
+	return i4BytesWritten;
+}
+#endif
 
 #if CFG_SUPPORT_BATCH_SCAN
 
@@ -2363,9 +2394,7 @@ __priv_nan_struct(IN struct net_device *prNetDev,
 
 		rNanCmdDataResponse.ucType = prDataRes->type;
 		rNanCmdDataResponse.ucDecisionStatus = prDataRes->rsp_code;
-#if (NAN_DATA_ENGINE_SIGMA_WORKAROUND == 1)
 		rNanCmdDataResponse.ucDecisionStatus = NAN_DP_REQUEST_ACCEPT;
-#endif
 		rNanCmdDataResponse.ucNDPId = prDataRes->ndp_instance_id;
 		rNanCmdDataResponse.ucRequireQOS = prDataRes->ndp_cfg.qos_cfg;
 		rNanCmdDataResponse.ucSecurity = prDataRes->cipher_type;
@@ -2413,7 +2442,6 @@ __priv_nan_struct(IN struct net_device *prNetDev,
 
 		rStatus = nanCmdDataEnd(prGlueInfo->prAdapter, &rNanCmdDataEnd);
 
-		/*DBGLOG(NAN, INFO, "NDPID %d\n", dataend->num_ndp_instances);*/
 		break;
 	}
 	case ENUM_NAN_DATA_UPDTAE: {
@@ -2839,11 +2867,11 @@ priv_get_ndis(IN struct net_device *prNetDev,
  * \brief The routine handles ATE set operation.
  *
  * \param[in] pDev Net device requested.
- * \param[in] prIwReqInfo Pointer to iwreq structure.
- * \param[in] prIwReqData The ioctl data structure, use the field of
- *            sub-command.
- * \param[in] pcExtra The buffer with input value
- *
+ * \param[in] ndisReq Ndis request OID information copy from user.
+ * \param[out] outputLen_p If the call is successful, returns the number of
+ *                         bytes written into the query buffer. If the
+ *                         call failed due to invalid length of the query
+ *                         buffer, returns the amount of storage needed..
  *
  * \retval 0 On success.
  * \retval -EOPNOTSUPP If cmd is not supported.
@@ -3412,8 +3440,6 @@ priv_set_driver(IN struct net_device *prNetDev,
 			       __func__, i4BytesWritten);
 			return -EFAULT;
 		}
-		if (prIwReqData->data.length >= IW_PRIV_BUF_SIZE)
-			return -EFAULT;
 		if (copy_from_user(pcExtra, prIwReqData->data.pointer,
 				   prIwReqData->data.length)) {
 			DBGLOG(REQ, INFO,
@@ -3440,8 +3466,8 @@ priv_set_driver(IN struct net_device *prNetDev,
 
 	if (i4BytesWritten > 0) {
 
-		if (i4BytesWritten > IW_PRIV_BUF_SIZE)
-			i4BytesWritten = IW_PRIV_BUF_SIZE;
+		if (i4BytesWritten > 2000)
+			i4BytesWritten = 2000;
 		prIwReqData->data.length =
 			i4BytesWritten;	/* the iwpriv will use the length */
 
@@ -3831,7 +3857,6 @@ reqExtSetAcpiDevicePowerState(IN struct GLUE_INFO
 #define	CMD_BAND_TYPE_ALL	3
 
 /* Mediatek private command */
-#define CMD_SUPPORT_NVRAM	"SUPPORT_NVRAM"
 #define CMD_SET_MCR		"SET_MCR"
 #define CMD_GET_MCR		"GET_MCR"
 #define CMD_SET_NVRAM	"SET_NVRAM"
@@ -3885,6 +3910,8 @@ reqExtSetAcpiDevicePowerState(IN struct GLUE_INFO
 #define CMD_THERMAL_PROTECT_DUTY_CFG	"thermal_protect_duty_cfg"
 #define CMD_THERMAL_PROTECT_STATE_ACT	"thermal_protect_state_act"
 #endif
+
+#define CMD_SET_USE_CASE	"SET_USE_CASE"
 
 #if (CFG_SUPPORT_ICS == 1)
 #define CMD_SET_SNIFFER         "SNIFFER"
@@ -4002,6 +4029,7 @@ reqExtSetAcpiDevicePowerState(IN struct GLUE_INFO
 
 #if CFG_SUPPORT_EASY_DEBUG
 #define CMD_FW_PARAM				"set_fw_param"
+#define CMD_RSSI_DISCONNECT    "DISCONRSSI"
 #endif /* CFG_SUPPORT_EASY_DEBUG */
 
 #if (CFG_SUPPORT_CONNINFRA == 1)
@@ -5498,47 +5526,6 @@ static int priv_driver_set_fw_log(IN struct net_device *prNetDev,
 	return i4BytesWritten;
 }
 #endif
-
-static int priv_driver_support_nvram(struct net_device *prNetDev,
-				char *pcCommand,
-				int i4TotalLen)
-{
-	struct GLUE_INFO *prGlueInfo = NULL;
-	struct WIFI_CFG_PARAM_STRUCT *prNvSet;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
-	int32_t i4Argc = 0;
-	int32_t i4ArgNum = 1;
-	uint32_t u4Offset = 0;
-
-	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
-		return -1;
-	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
-	DBGLOG(REQ, INFO, "command is %s\n", pcCommand);
-	wlanCfgParseArgument(pcCommand, &i4Argc, apcArgv);
-	DBGLOG(REQ, INFO, "argc is %i\n", i4Argc);
-	if (i4Argc == i4ArgNum) {
-		u4Offset += snprintf(pcCommand + u4Offset,
-			(i4TotalLen - u4Offset),
-			"%d\n",
-			prGlueInfo->fgNvramAvailable);
-		if (prGlueInfo->fgNvramAvailable == TRUE) {
-			prNvSet = prGlueInfo->rRegInfo.prNvramSettings;
-			u4Offset += snprintf(pcCommand + u4Offset,
-				(i4TotalLen - u4Offset),
-				"NVRAM Version is[%d.%d.%d]\n",
-				(prNvSet->u2Part1OwnVersion & 0x00FF),
-				(prNvSet->u2Part1OwnVersion & 0xFF00) >> 8,
-				(prNvSet->u2Part1PeerVersion & 0xFF));
-			} else {
-			u4Offset += snprintf(pcCommand + u4Offset,
-				(i4TotalLen - u4Offset),
-				"NVRAM nonsupport!\n");
-			}
-			DBGLOG(REQ, INFO,
-				"command result is %s\n", pcCommand);
-			}
-	return (int32_t)u4Offset;
-}
 
 static int priv_driver_get_mcr(IN struct net_device *prNetDev,
 			       IN char *pcCommand, IN int i4TotalLen)
@@ -7714,8 +7701,8 @@ static int priv_driver_add_acl_entry(IN struct net_device *prNetDev,
 		return -1;
 	}
 
-	for (i = 0; i <= prBssInfo->rACL.u4Num; i++) {
-		if (memcmp(prBssInfo->rACL.rEntry[i].aucAddr, &aucMacAddr,
+	for (i = 1; i <= prBssInfo->rACL.u4Num; i++) {
+		if (memcmp(prBssInfo->rACL.rEntry[i-1].aucAddr, &aucMacAddr,
 		    MAC_ADDR_LEN) == 0) {
 			DBGLOG(REQ, ERROR, "add this mac [" MACSTR
 			       "] is duplicate.\n", MAC2STR(aucMacAddr));
@@ -7723,7 +7710,7 @@ static int priv_driver_add_acl_entry(IN struct net_device *prNetDev,
 		}
 	}
 
-	if ((i < 1) || (i > MAX_NUMBER_OF_ACL)) {
+	if (i > MAX_NUMBER_OF_ACL) {
 		DBGLOG(REQ, ERROR, "idx[%d] error or ACL is full.\n", i);
 		return -1;
 	}
@@ -8714,7 +8701,7 @@ int priv_driver_set_chip_config(IN struct net_device *prNetDev,
 #if (CFG_SUPPORT_CONNINFRA == 1)
 	struct conn_metlog_info rMetInfo;
 	int32_t i4MetRes = 0;
-	uint32_t u4ConEmiPhyBase = 0;
+	phys_addr_t u4ConEmiPhyBase = 0;
 	uint32_t u4EmiMetOffset = 0;
 #endif
 
@@ -9330,8 +9317,6 @@ int priv_driver_set_band(IN struct net_device *prNetDev, IN char *pcCommand,
 	enum ENUM_BAND eBand = BAND_NULL;
 	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t u4Ret = 0;
-	uint32_t u4BufLen = 0;
-	uint32_t rStatus = WLAN_STATUS_SUCCESS;
 
 	ASSERT(prNetDev);
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
@@ -9357,55 +9342,15 @@ int priv_driver_set_band(IN struct net_device *prNetDev, IN char *pcCommand,
 			eBand = BAND_2G4;
 
 		prAdapter->aePreferBand[KAL_NETWORK_TYPE_AIS_INDEX] = eBand;
-
-#if CFG_SUPPORT_NCHO
-		/* Handle NCHO setband */
-		rStatus = kalIoctl(prGlueInfo, wlanoidSetNchoBand,
-			&ucBand, sizeof(ucBand),
-			FALSE, FALSE, FALSE, &u4BufLen);
-		if (rStatus != WLAN_STATUS_SUCCESS)
-			return -1;
-#endif
+		/* XXX call wlanSetPreferBandByNetwork directly in different
+		 * thread
+		 */
+		/* wlanSetPreferBandByNetwork (prAdapter, eBand, ucBssIndex); */
 	}
 
 	return 0;
 }
 
-int priv_driver_get_band(IN struct net_device *prNetDev, IN char *pcCommand,
-			 IN int i4TotalLen)
-{
-	struct GLUE_INFO *prGlueInfo = NULL;
-	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
-	uint32_t i4BytesWritten = 0;
-	uint32_t u4Band = 0;
-	uint32_t u4BufLen = 0;
-	uint32_t rStatus = WLAN_STATUS_SUCCESS;
-
-	ASSERT(prNetDev);
-	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
-		return -1;
-	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
-
-	DBGLOG(REQ, LOUD, "command is %s\n", pcCommand);
-	wlanCfgParseArgument(pcCommand, &i4Argc, apcArgv);
-	DBGLOG(REQ, LOUD, "argc is %i\n", i4Argc);
-
-	rStatus = kalIoctl(prGlueInfo,
-			   wlanoidQueryNchoBand,
-			   &u4Band, sizeof(u4Band),
-			   TRUE, FALSE, FALSE, &u4BufLen);
-
-	if (rStatus != WLAN_STATUS_SUCCESS)
-		return -1;
-
-	i4BytesWritten = kalSnprintf(pcCommand,
-				     i4TotalLen,
-				     CMD_GETBAND" %u",
-				     u4Band);
-
-	return i4BytesWritten;
-}
 
 int priv_driver_set_country(IN struct net_device *prNetDev,
 			    IN char *pcCommand, IN int i4TotalLen)
@@ -9417,6 +9362,9 @@ int priv_driver_set_country(IN struct net_device *prNetDev,
 	int32_t i4Argc = 0;
 	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint8_t aucCountry[2];
+	uint16_t u2CountryCode = 0;
+	uint8_t aucCountry_code[4] = {0, 0, 0, 0};
+	uint8_t i, count;
 
 	ASSERT(prNetDev);
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
@@ -9428,8 +9376,6 @@ int priv_driver_set_country(IN struct net_device *prNetDev,
 	DBGLOG(REQ, LOUD, "argc is %i\n", i4Argc);
 
 	if (regd_is_single_sku_en()) {
-		uint8_t aucCountry_code[4] = {0, 0, 0, 0};
-		uint8_t i, count;
 
 		/* command like "COUNTRY US", "COUNTRY US1" and
 		 * "COUNTRY US01"
@@ -9438,8 +9384,11 @@ int priv_driver_set_country(IN struct net_device *prNetDev,
 		for (i = 0; i < count; i++)
 			aucCountry_code[i] = apcArgv[1][i];
 
-
-		rStatus = kalIoctl(prGlueInfo, wlanoidSetCountryCode,
+		u2CountryCode = (((uint16_t) aucCountry_code[0]) << 8) |
+			((uint16_t) aucCountry_code[1]);
+		rStatus = priv_driver_set_ce_or_fcc_country(prGlueInfo,
+			u2CountryCode);
+		rStatus |= kalIoctl(prGlueInfo, wlanoidSetCountryCode,
 				   &aucCountry_code[0], count,
 				   FALSE, FALSE, TRUE, &u4BufLen);
 		if (rStatus != WLAN_STATUS_SUCCESS)
@@ -9453,8 +9402,13 @@ int priv_driver_set_country(IN struct net_device *prNetDev,
 		/* command like "COUNTRY US", "COUNTRY EU" and "COUNTRY JP" */
 		aucCountry[0] = apcArgv[1][0];
 		aucCountry[1] = apcArgv[1][1];
-
-		rStatus = kalIoctl(prGlueInfo, wlanoidSetCountryCode,
+		u2CountryCode = (((uint16_t) aucCountry[0]) << 8) |
+			((uint16_t) aucCountry[1]);
+		DBGLOG(REQ, INFO,
+			"i4Argc >= 2 enters aucCountry[0]=%u, aucCountry[1]=%u\n", aucCountry[0], aucCountry[1]);
+		rStatus = priv_driver_set_ce_or_fcc_country(prGlueInfo,
+			u2CountryCode);
+		rStatus |= kalIoctl(prGlueInfo, wlanoidSetCountryCode,
 				   &aucCountry[0], 2, FALSE, FALSE, TRUE,
 				   &u4BufLen);
 
@@ -10611,12 +10565,6 @@ __priv_set_ap(IN struct net_device *prNetDev,
 			DBGLOG(REQ, INFO,
 				"%s access_ok Read fail written = %d\n",
 				__func__, i4BytesWritten);
-			return -EFAULT;
-		}
-		if (prIwReqData->data.length >
-			CMD_OID_BUF_LENGTH) {
-			DBGLOG(REQ, INFO,
-				"illegal cmd length\n");
 			return -EFAULT;
 		}
 		if (copy_from_user(aucOidBuf,
@@ -12740,8 +12688,8 @@ static int priv_driver_get_version(IN struct net_device *prNetDev,
 	prAdapter = prGlueInfo->prAdapter;
 
 	u4Offset += fwDlGetFwdlInfo(prAdapter, pcCommand, i4TotalLen);
-	u4Offset += snprintf(pcCommand + u4Offset, i4TotalLen - u4Offset,
-		"WiFi Driver Version MTK_%u.%u.%u\n",
+	u4Offset += kalSnprintf(pcCommand + u4Offset, i4TotalLen - u4Offset,
+		"WiFi Driver Version %u.%u.%u\n",
 		NIC_DRIVER_MAJOR_VERSION,
 		NIC_DRIVER_MINOR_VERSION,
 		NIC_DRIVER_SERIAL_VERSION);
@@ -14517,7 +14465,7 @@ static int priv_driver_trigger_whole_chip_reset(
 	glSetRstReason(RST_CMD_TRIGGER);
 	glSetRstReasonString(
 		"cmd test trigger whole chip reset");
-	conninfra_trigger_whole_chip_rst(CONNDRV_TYPE_WIFI, g_reason);
+	glResetWholeChipResetTrigger(g_reason);
 
 	return i4BytesWritten;
 }
@@ -15385,7 +15333,7 @@ struct PRIV_CMD_HANDLER priv_cmd_handlers[] = {
 	{CMD_SETSUSPENDOPT, NULL /*wl_android_set_suspendopt*/},
 	{CMD_SETSUSPENDMODE, priv_driver_set_suspend_mode},
 	{CMD_SETBAND, priv_driver_set_band},
-	{CMD_GETBAND, priv_driver_get_band},
+	{CMD_GETBAND, NULL /*wl_android_get_band*/},
 	{CMD_COUNTRY, priv_driver_set_country},
 	{CMD_CSA, priv_driver_set_csa},
 	{CMD_GET_COUNTRY, priv_driver_get_country},
@@ -15407,7 +15355,6 @@ struct PRIV_CMD_HANDLER priv_cmd_handlers[] = {
 	{CMD_SET_SNIFFER, priv_driver_sniffer},
 #endif /* CFG_SUPPORT_ICS */
 	{CMD_GET_SW_CTRL, priv_driver_get_sw_ctrl},
-	{CMD_SUPPORT_NVRAM, priv_driver_support_nvram},
 	{CMD_SET_MCR, priv_driver_set_mcr},
 	{CMD_GET_MCR, priv_driver_get_mcr},
 	{CMD_SET_DRV_MCR, priv_driver_set_drv_mcr},
@@ -15542,6 +15489,7 @@ struct PRIV_CMD_HANDLER priv_cmd_handlers[] = {
 	{CMD_THERMAL_PROTECT_DUTY_CFG, priv_driver_thermal_protect_duty_cfg},
 	{CMD_THERMAL_PROTECT_STATE_ACT, priv_driver_thermal_protect_state_act},
 #endif
+	{CMD_SET_USE_CASE, priv_driver_set_multista_use_case},
 };
 
 int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
@@ -15562,7 +15510,7 @@ int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 
 	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
 
-	for (i = 0; i < (int)sizeof(priv_cmd_handlers) / sizeof(struct
+	for (i = 0; i < sizeof(priv_cmd_handlers) / sizeof(struct
 			PRIV_CMD_HANDLER); i++) {
 		if (strnicmp(pcCommand,
 				priv_cmd_handlers[i].pcCmdStr,
@@ -15737,6 +15685,15 @@ int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 				 wlanoidShowDmaschInfo,
 				 (void *) pcCommand, i4TotalLen,
 				 FALSE, FALSE, TRUE, &i4BytesWritten);
+
+#if CFG_SUPPORT_RSSI_DISCONNECT
+		} else if (strnicmp(pcCommand, CMD_RSSI_DISCONNECT,
+				strlen(CMD_RSSI_DISCONNECT)) == 0) {
+		i4BytesWritten = priv_driver_get_rssiDisconnect(prNetDev,
+				pcCommand, i4TotalLen);
+
+#endif
+
 #if CFG_SUPPORT_EASY_DEBUG
 		} else if (strnicmp(pcCommand, CMD_FW_PARAM,
 				strlen(CMD_FW_PARAM)) == 0) {
@@ -15784,7 +15741,7 @@ int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 				 FALSE, &i4BytesWritten);
 		} else if (!strnicmp(pcCommand, CMD_FW_EVENT, 9)) {
 			kalIoctl(prGlueInfo, wlanoidFwEventIT,
-				 (void *)(pcCommand + 9), i4TotalLen - 9, FALSE,
+				 (void *)(pcCommand + 9), i4TotalLen, FALSE,
 				 FALSE, FALSE, &i4BytesWritten);
 		} else if (!strnicmp(pcCommand, CMD_DUMP_UAPSD,
 				     strlen(CMD_DUMP_UAPSD))) {
@@ -16000,6 +15957,8 @@ int priv_support_driver_cmd(IN struct net_device *prNetDev,
 	struct priv_driver_cmd_s *priv_cmd = NULL;
 	int i4BytesWritten = 0;
 	int i4TotalLen = 0;
+	struct ifreq *prOriprReq = NULL;
+	uint8_t *prOriprReqData = NULL;
 
 	if (!prReq->ifr_data) {
 		ret = -EINVAL;
@@ -16007,6 +15966,8 @@ int priv_support_driver_cmd(IN struct net_device *prNetDev,
 	}
 
 	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
+	prOriprReq = prReq;
+	prOriprReqData = prReq->ifr_data;
 	if (!prGlueInfo) {
 		DBGLOG(REQ, WARN, "No glue info\n");
 		ret = -EFAULT;
@@ -16040,8 +16001,8 @@ int priv_support_driver_cmd(IN struct net_device *prNetDev,
 	priv_cmd->buf[PRIV_CMD_SIZE - 1] = '\0';
 	pcCommand = priv_cmd->buf;
 
-	DBGLOG(REQ, INFO, "%s: driver cmd \"%s\" on %s\n", __func__, pcCommand,
-	       prReq->ifr_name);
+	DBGLOG(REQ, INFO, "%s: driver cmd \"%s\" on %s,(%p,%p)\n", __func__,
+		pcCommand, prReq->ifr_name, prReq, prReq->ifr_data);
 
 	i4BytesWritten = priv_driver_cmds(prNetDev, pcCommand, i4TotalLen);
 
@@ -16050,6 +16011,12 @@ int priv_support_driver_cmd(IN struct net_device *prNetDev,
 		i4BytesWritten = kalSnprintf(pcCommand, i4TotalLen,
 					    "%s", "UNSUPPORTED");
 		i4BytesWritten++;
+	}
+	if ((prOriprReq != prReq) || (prOriprReqData != prReq->ifr_data)) {
+		DBGLOG(REQ, WARN, "Err!!prReq(%p,%p) prReq->ifr_data(%p,%p)\n",
+			prReq, prOriprReq, prReq->ifr_data, prOriprReqData);
+		ret = -EFAULT;
+		goto exit;
 	}
 
 	if (i4BytesWritten >= 0) {
@@ -16062,7 +16029,7 @@ int priv_support_driver_cmd(IN struct net_device *prNetDev,
 			i4BytesWritten++;
 		priv_cmd->used_len = i4BytesWritten;
 		if (copy_to_user(prReq->ifr_data, priv_cmd,
-				i4BytesWritten)) {
+				sizeof(struct priv_driver_cmd_s))) {
 			ret = -EFAULT;
 			DBGLOG(REQ, INFO, "copy fail");
 		}
@@ -16278,3 +16245,51 @@ static int priv_driver_set_pwr_temp(IN struct net_device *prNetDev,
 	return i4BytesWritten;
 }
 #endif
+
+static int priv_driver_set_multista_use_case(IN struct net_device *prNetDev,
+	IN char *pcCommand, IN int i4TotalLen)
+{
+	struct GLUE_INFO *prGlueInfo = NULL;
+#if 0
+	uint32_t rStatus = WLAN_STATUS_SUCCESS;
+#endif
+	int32_t i4BytesWritten = 0;
+	int32_t i4Argc = 0;
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
+	uint32_t u4Ret, u4UseCase = 0;
+
+	ASSERT(prNetDev);
+
+	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
+		return -1;
+
+	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
+
+	DBGLOG(REQ, LOUD, "command is %s\n", pcCommand);
+	wlanCfgParseArgument(pcCommand, &i4Argc, apcArgv);
+
+	if (i4Argc == 2) {
+
+		u4Ret = kalkStrtou32(apcArgv[1], 0, &u4UseCase);
+		if (u4Ret)
+			DBGLOG(REQ, LOUD, "parse apcArgv error u4Ret=%d\n",
+			       u4Ret);
+
+#if 0
+		rStatus = kalIoctl(prGlueInfo,
+				   wlanoidSetMultiStaUseCase,
+				   &u4UseCase,
+				   sizeof(uint32_t),
+				   FALSE,
+				   FALSE,
+				   FALSE,
+				   &u4BufLen);
+
+		if (rStatus != WLAN_STATUS_SUCCESS)
+			return -1;
+#endif
+	} else
+		DBGLOG(INIT, ERROR, "Invalid input params\n");
+
+	return i4BytesWritten;
+}

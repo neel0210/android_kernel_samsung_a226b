@@ -627,9 +627,6 @@ INT32 mtk_wcn_consys_hw_reg_ctrl(UINT32 on, UINT32 co_clock_type)
 
 	if (on) {
 		WMT_PLAT_PR_DBG("++\n");
-		if (wmt_consys_ic_ops->consys_ic_cr_remapping)
-			wmt_consys_ic_ops->consys_ic_cr_remapping(1);
-
 		if (wmt_consys_ic_ops->consys_ic_reset_emi_coredump)
 			wmt_consys_ic_ops->consys_ic_reset_emi_coredump(pEmibaseaddr);
 
@@ -737,9 +734,6 @@ INT32 mtk_wcn_consys_hw_reg_ctrl(UINT32 on, UINT32 co_clock_type)
 
 		if (wmt_consys_ic_ops->consys_ic_hw_vcn18_ctrl)
 			wmt_consys_ic_ops->consys_ic_hw_vcn18_ctrl(DISABLE);
-
-		if (wmt_consys_ic_ops->consys_ic_cr_remapping)
-			wmt_consys_ic_ops->consys_ic_cr_remapping(0);
 	}
 	WMT_PLAT_PR_INFO("CONSYS-HW-REG-CTRL(0x%08x),finish\n", on);
 	return iRet;
@@ -835,7 +829,7 @@ INT32 mtk_wcn_consys_detect_adie_chipid(UINT32 co_clock_type)
 	return chipid;
 }
 
-struct pinctrl *mtk_wcn_consys_get_pinctrl()
+struct pinctrl *mtk_wcn_consys_get_pinctrl(void)
 {
 	return consys_pinctrl;
 }
@@ -1353,11 +1347,4 @@ VOID mtk_wcn_consys_set_vcn33_1_voltage(UINT32 voltage)
 
 	if (wmt_consys_ic_ops && wmt_consys_ic_ops->consys_ic_set_vcn33_1_voltage)
 		wmt_consys_ic_ops->consys_ic_set_vcn33_1_voltage(voltage);
-}
-
-UINT32 mtk_wcn_consys_wakeup_btif_irq_pull_low(VOID)
-{
-	if (wmt_consys_ic_ops->consys_ic_wakeup_btif_irq_pull_low)
-		return wmt_consys_ic_ops->consys_ic_wakeup_btif_irq_pull_low();
-	return 1;
 }

@@ -197,7 +197,7 @@ uint32_t
 halRxWaitResponse(IN struct ADAPTER *prAdapter,
 		  IN uint8_t ucPortIdx, OUT uint8_t *pucRspBuffer,
 		  IN uint32_t u4MaxRespBufferLen, OUT uint32_t *pu4Length,
-		  IN uint32_t u4WaitingInterval)
+		  IN uint32_t u4WaitingInterval, IN uint32_t u4TimeoutValue)
 {
 	struct mt66xx_chip_info *prChipInfo;
 	uint32_t u4Value = 0, u4PktLen = 0, i = 0, u4CpyLen;
@@ -674,11 +674,6 @@ void halDevInit(IN struct ADAPTER *prAdapter)
 
 void halTxCancelSendingCmd(IN struct ADAPTER *prAdapter, IN struct CMD_INFO *prCmdInfo)
 {
-}
-
-u_int8_t halTxIsCmdBufEnough(IN struct ADAPTER *prAdapter)
-{
-	return TRUE;
 }
 
 u_int8_t halTxIsDataBufEnough(IN struct ADAPTER *prAdapter, IN struct MSDU_INFO *prMsduInfo)
@@ -1471,7 +1466,8 @@ void halRxSDIOAggReceiveRFBs(IN struct ADAPTER *prAdapter)
 			DBGLOG(RX, TRACE, "[%s] No free Rx buffer\n", __func__);
 			prHifInfo->rStatCounter.u4RxBufUnderFlowCnt++;
 
-			if (prAdapter->prGlueInfo->ulFlag & GLUE_FLAG_HALT) {
+			if (test_bit(GLUE_FLAG_HALT_BIT,
+					&prAdapter->prGlueInfo->ulFlag)) {
 				struct QUE rTempQue;
 				struct QUE *prTempQue = &rTempQue;
 
@@ -2334,7 +2330,7 @@ void halDeAggRxPktWorker(struct work_struct *work)
 	ASSERT(prRxDescOps->nic_rxd_get_rx_byte_count);
 	ASSERT(prRxDescOps->nic_rxd_get_pkt_type);
 
-	if (prGlueInfo->ulFlag & GLUE_FLAG_HALT)
+	if (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag))
 		return;
 
 	prRxCtrl = &prAdapter->rRxCtrl;
@@ -2367,7 +2363,8 @@ void halDeAggRxPktWorker(struct work_struct *work)
 			mutex_unlock(&prHifInfo->rRxDeAggQueMutex);
 
 			/* Reschedule this work */
-			if ((prGlueInfo->ulFlag & GLUE_FLAG_HALT) == 0)
+			if (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag)
+				== 0)
 				schedule_delayed_work(&prAdapter->prGlueInfo->rRxPktDeAggWork, 0);
 
 			return;
@@ -2454,7 +2451,7 @@ void halDeAggRxPktWorker(struct work_struct *work)
 		QUEUE_INSERT_TAIL(&prHifInfo->rRxFreeBufQueue, (struct QUE_ENTRY *)prRxBuf);
 		mutex_unlock(&prHifInfo->rRxFreeBufQueMutex);
 
-		if (prGlueInfo->ulFlag & GLUE_FLAG_HALT)
+		if (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag))
 			return;
 
 		mutex_lock(&prHifInfo->rRxDeAggQueMutex);
@@ -2470,7 +2467,7 @@ void halDeAggRxPkt(struct ADAPTER *prAdapter, struct SDIO_RX_COALESCING_BUF *prR
 	prHifInfo = &prAdapter->prGlueInfo->rHifInfo;
 
 	/* Avoid to schedule DeAggWorker during uninit flow */
-	if (prAdapter->prGlueInfo->ulFlag & GLUE_FLAG_HALT) {
+	if (test_bit(GLUE_FLAG_HALT_BIT, &prAdapter->prGlueInfo->ulFlag)) {
 		mutex_lock(&prHifInfo->rRxFreeBufQueMutex);
 		QUEUE_INSERT_TAIL(&prHifInfo->rRxFreeBufQueue, (struct QUE_ENTRY *)prRxBuf);
 		mutex_unlock(&prHifInfo->rRxFreeBufQueMutex);

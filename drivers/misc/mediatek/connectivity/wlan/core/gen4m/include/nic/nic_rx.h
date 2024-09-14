@@ -581,7 +581,6 @@ enum ENUM_RX_STATISTIC_COUNTER {
 #if CFG_SUPPORT_BAR_DELAY_INDICATION
 	RX_BAR_DELAY_COUNT,
 #endif /* CFG_SUPPORT_BAR_DELAY_INDICATION */
-	RX_AP_ISO_DROP_COUNT,
 	RX_STATISTIC_COUNTER_NUM
 };
 
@@ -1557,7 +1556,7 @@ uint32_t nicRxWaitResponse(IN struct ADAPTER *prAdapter,
 uint32_t nicRxWaitResponseByWaitingInterval(IN struct ADAPTER *prAdapter,
 	IN uint8_t ucPortIdx, OUT uint8_t *pucRspBuffer,
 	IN uint32_t u4MaxRespBufferLen, OUT uint32_t *pu4Length,
-	IN uint32_t u4WaitingInterval);
+	IN uint32_t u4WaitingInterval, IN uint32_t u4TimeoutValue);
 
 void nicRxEnablePromiscuousMode(IN struct ADAPTER *prAdapter);
 

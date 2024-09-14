@@ -2108,13 +2108,10 @@ struct BSS_INFO *cnmGetBssInfoAndInit(struct ADAPTER *prAdapter,
 				      enum ENUM_NETWORK_TYPE eNetworkType,
 				      u_int8_t fgIsP2pDevice)
 {
-	struct WIFI_VAR *prWifiVar;
 	struct BSS_INFO *prBssInfo;
 	uint8_t i, ucBssIndex, ucOwnMacIdx;
 
 	ASSERT(prAdapter);
-
-	prWifiVar = &prAdapter->rWifiVar;
 
 	/*specific case for p2p device scan*/
 	if (eNetworkType == NETWORK_TYPE_P2P && fgIsP2pDevice) {
@@ -2125,8 +2122,6 @@ struct BSS_INFO *cnmGetBssInfoAndInit(struct ADAPTER *prAdapter,
 		prBssInfo->ucBssIndex = prAdapter->ucP2PDevBssIdx;
 		prBssInfo->eNetworkType = eNetworkType;
 		prBssInfo->ucOwnMacIndex = prAdapter->ucHwBssIdNum;
-		prBssInfo->u4NetifStopTh = prWifiVar->u4NetifStopTh;
-		prBssInfo->u4NetifStartTh = prWifiVar->u4NetifStartTh;
 
 		/* initialize wlan id and status for keys */
 		prBssInfo->ucBMCWlanIndex = WTBL_RESERVED_ENTRY;
@@ -2218,8 +2213,6 @@ struct BSS_INFO *cnmGetBssInfoAndInit(struct ADAPTER *prAdapter,
 		/* initialize wlan id and status for keys */
 		prBssInfo->ucBMCWlanIndex = WTBL_RESERVED_ENTRY;
 		prBssInfo->wepkeyWlanIdx = WTBL_RESERVED_ENTRY;
-		prBssInfo->u4NetifStopTh = prWifiVar->u4NetifStopTh;
-		prBssInfo->u4NetifStartTh = prWifiVar->u4NetifStartTh;
 		for (i = 0; i < MAX_KEY_NUM; i++) {
 			prBssInfo->ucBMCWlanIndexSUsed[i] = FALSE;
 			prBssInfo->ucBMCWlanIndexS[i] = WTBL_RESERVED_ENTRY;
@@ -4154,6 +4147,50 @@ cnmOpModeReqDispatcher(
 	return eReqFinal;
 }
 
+uint8_t cnmOpModeGetMaxBw(IN struct ADAPTER *prAdapter,
+	IN struct BSS_INFO *prBssInfo)
+{
+	uint8_t ucOpMaxBw = MAX_BW_UNKNOWN;
+	uint8_t ucS1 = 0;
+
+	if (prBssInfo->eCurrentOPMode == OP_MODE_ACCESS_POINT) { /* AP, GO */
+		ucOpMaxBw = cnmGetBssMaxBw(prAdapter, prBssInfo->ucBssIndex);
+
+		if (ucOpMaxBw >= MAX_BW_80MHZ) {
+			/* Verify if there is valid S1 */
+			ucS1 = nicGetS1(prBssInfo->eBand,
+				prBssInfo->ucPrimaryChannel,
+				rlmMaxBwToVhtBw(ucOpMaxBw));
+
+			/* Try if there is valid S1 for BW80 if we failed to
+			 * get S1 for BW160.
+			 */
+			if (ucS1 == 0 && ucOpMaxBw == MAX_BW_160MHZ) {
+				ucS1 = nicGetS1(prBssInfo->eBand,
+					prBssInfo->ucPrimaryChannel,
+					rlmMaxBwToVhtBw(MAX_BW_80MHZ));
+
+				if (ucS1) /* Fallback to BW80 */
+					ucOpMaxBw = MAX_BW_80MHZ;
+			}
+
+			if (ucS1 == 0) {  /* Invalid S1 */
+				DBGLOG(CNM, INFO,
+					"fallback to BW20, BssIdx[%d], CH[%d], MaxBw[%d]\n",
+					prBssInfo->ucBssIndex,
+					prBssInfo->ucPrimaryChannel,
+					ucOpMaxBw);
+
+				ucOpMaxBw = MAX_BW_20MHZ;
+			}
+		}
+	} else { /* STA, GC */
+		ucOpMaxBw = rlmGetBssOpBwByVhtAndHtOpInfo(prBssInfo);
+	}
+
+	return ucOpMaxBw;
+}
+
 /*----------------------------------------------------------------------------*/
 /*!
  * @brief Set the operating TRx Nss.
@@ -4231,7 +4268,7 @@ cnmOpModeSetTRxNss(
 		 * If you want to change OpBw in the future, please
 		 * make sure you can restore to current peer's OpBw.
 		 */
-		ucOpBwFinal = rlmGetBssOpBwByVhtAndHtOpInfo(prBssInfo);
+		ucOpBwFinal = cnmOpModeGetMaxBw(prAdapter, prBssInfo);
 		if ((eRunReq ==  CNM_OPMODE_REQ_DBDC ||
 			eRunReq == CNM_OPMODE_REQ_DBDC_SCAN) &&
 			ucOpBwFinal > MAX_BW_80MHZ) {
@@ -4290,10 +4327,19 @@ cnmOpModeSetTRxNss(
 			prBssOpCtrl->rRunning.eRunReq = eRunReq;
 			prBssOpCtrl->rRunning.ucOpTxNss = ucOpTxNssFinal;
 			prBssOpCtrl->rRunning.ucOpRxNss = ucOpRxNssFinal;
+#if (CFG_SUPPORT_POWER_THROTTLING == 1 && CFG_SUPPORT_CNM_POWER_CTRL == 1)
+			if (prAdapter->fgANTCtrl)
+				prAdapter->ucANTCtrlPendingCount++;
+#endif
 			break;
 		case OP_CHANGE_STATUS_INVALID:
 		default:
 			eStatus = CNM_OPMODE_REQ_STATUS_INVALID_PARAM;
+#if (CFG_SUPPORT_POWER_THROTTLING == 1 && CFG_SUPPORT_CNM_POWER_CTRL == 1)
+			/* cannot complete ANT control */
+			if (prAdapter->fgANTCtrl)
+				prAdapter->ucANTCtrlPendingCount++;
+#endif
 			break;
 		}
 	}
@@ -4450,15 +4496,12 @@ void cnmOpmodeEventHandler(
 		(prEvent->aucBuffer);
 
 #if (CFG_SUPPORT_POWER_THROTTLING == 1 && CFG_SUPPORT_CNM_POWER_CTRL == 1)
-	/* store reason for ANT_CTRL and SMARTGEAR  */
-	if (prEvtOpMode->ucEnable &&
-			(prEvtOpMode->ucReason ==
-				EVENT_OPMODE_CHANGE_REASON_ANT_CTRL ||
-			prEvtOpMode->ucReason ==
-				EVENT_OPMODE_CHANGE_REASON_SMARTGEAR ||
-			prEvtOpMode->ucReason ==
-				EVENT_OPMODE_CHANGE_REASON_SMARTGEAR_1T2R)) {
+	/* only notify FW for ANT control */
+	if ((prEvtOpMode->ucEnable) &&
+	    (prEvtOpMode->ucReason == EVENT_OPMODE_CHANGE_REASON_ANT_CTRL)) {
+		prAdapter->fgANTCtrl = true;
 		prAdapter->ucANTCtrlReason = prEvtOpMode->ucReason;
+		prAdapter->ucANTCtrlPendingCount = 0;
 	}
 #endif
 
@@ -4495,6 +4538,19 @@ void cnmOpmodeEventHandler(
 			);
 		}
 	}
+
+#if (CFG_SUPPORT_POWER_THROTTLING == 1 && CFG_SUPPORT_CNM_POWER_CTRL == 1)
+	/* notify FW if no active BSS or no pending action frame */
+	if (prAdapter->fgANTCtrl) {
+		DBGLOG(CNM, INFO,
+			"ANT control = Enable: %d, reason: %d, pending count = %d\n",
+			prAdapter->fgANTCtrl, prAdapter->ucANTCtrlReason,
+			prAdapter->ucANTCtrlPendingCount);
+		if (prAdapter->ucANTCtrlPendingCount == 0)
+			rlmSyncAntCtrl(prAdapter,
+				prEvtOpMode->ucOpTxNss, prEvtOpMode->ucOpRxNss);
+	}
+#endif
 }
 
 enum ENUM_CNM_WMM_QUOTA_REQ_T
@@ -4768,11 +4824,10 @@ void cnmPowerControlErrorHandling(
 		break;
 	case NETWORK_TYPE_P2P:
 		p2pFuncDisconnect(prAdapter,
-			prBssInfo,
-			prBssInfo->prStaRecOfAP,
-			FALSE,
-			REASON_CODE_OP_MODE_CHANGE_FAIL,
-			TRUE);
+					prBssInfo,
+					prBssInfo->prStaRecOfAP,
+					FALSE,
+					REASON_CODE_OP_MODE_CHANGE_FAIL);
 		break;
 	default:
 		break;
