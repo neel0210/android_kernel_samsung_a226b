@@ -454,6 +454,7 @@ enum ENUM_CMD_TX_RESULT {
 #define SUSPEND_FLAG_FOR_WAKEUP_REASON	(0)
 #define SUSPEND_FLAG_CLEAR_WHEN_RESUME	(1)
 
+
 /*----------------------------------------------------------------------------*/
 /* Macros of getting current thread id                                        */
 /*----------------------------------------------------------------------------*/
@@ -609,14 +610,6 @@ enum ENUM_CMD_TX_RESULT {
 	pvAddr; \
 })
 #endif
-
-#define kalMemZAlloc(u4Size, eMemType) ({    \
-	void *pvAddr; \
-	pvAddr = kalMemAlloc(u4Size, eMemType); \
-	if (pvAddr) \
-		kalMemSet(pvAddr, 0, u4Size); \
-	pvAddr; \
-})
 
 /*----------------------------------------------------------------------------*/
 /*!

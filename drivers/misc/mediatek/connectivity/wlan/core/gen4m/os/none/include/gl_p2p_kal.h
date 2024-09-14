@@ -395,8 +395,7 @@ kalP2PGCIndicateConnectionStatus(IN struct GLUE_INFO *prGlueInfo,
 		IN struct P2P_CONNECTION_REQ_INFO *prP2pConnInfo,
 		IN uint8_t *pucRxIEBuf,
 		IN uint16_t u2RxIELen,
-		IN uint16_t u2StatusReason,
-		IN uint32_t eStatus);
+		IN uint16_t u2StatusReason);
 
 void
 kalP2PGOStationUpdate(IN struct GLUE_INFO *prGlueInfo,

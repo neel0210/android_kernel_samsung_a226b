@@ -67,8 +67,9 @@ nanDevInit(IN struct ADAPTER *prAdapter, uint8_t ucIdx) {
 		prnanBssInfo->ucOpRxNss = wlanGetSupportNss(
 			prAdapter, prnanBssInfo->ucBssIndex);
 
-		/* let secIsProtectedFrame to decide protection or */
-		/* not by STA record */
+		/* let secIsProtectedFrame to decide protection or
+		 * not by STA record
+		 */
 		prnanBssInfo->fgIsProtection = FALSE;
 
 #if (CFG_HW_WMM_BY_BSS == 1)
@@ -254,6 +255,14 @@ nanGetBssIdxbyBand(IN struct ADAPTER *prAdapter,
 	uint8_t ucIdx = 0;
 	struct _NAN_SPECIFIC_BSS_INFO_T *prNANSpecInfo;
 	struct BSS_INFO *prBssInfo;
+
+	/* Use default BSS if can't find correct peerSchRec or no band info */
+	if (eBand == BAND_NULL) {
+		DBGLOG(NAN, WARN, "no band info\n");
+		prNANSpecInfo = nanGetSpecificBssInfo(
+				prAdapter, NAN_BSS_INDEX_BAND0);
+		return prNANSpecInfo->ucBssIndex;
+	}
 
 	for (ucIdx = 0; ucIdx < NAN_BSS_INDEX_NUM; ucIdx++) {
 		prNANSpecInfo = nanGetSpecificBssInfo(prAdapter, ucIdx);

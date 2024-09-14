@@ -255,7 +255,12 @@ static void axiDumpRx(struct GL_HIF_INFO *prHifInfo,
 
 struct mt66xx_hif_driver_data *get_platform_driver_data(void)
 {
-	return (struct mt66xx_hif_driver_data *)mtk_axi_ids[0].driver_data;
+	ASSERT(g_prPlatDev);
+	if (!g_prPlatDev)
+		return NULL;
+
+	return (struct mt66xx_hif_driver_data *) platform_get_drvdata(
+			g_prPlatDev);
 }
 
 static int hifAxiProbe(void)
@@ -416,6 +421,7 @@ static void register_conninfra_cb(void)
 	/* Register conninfra call back */
 	conninfra_wf_cb.pre_cal_cb.pwr_on_cb = wlanPreCalPwrOn;
 	conninfra_wf_cb.pre_cal_cb.do_cal_cb = wlanPreCal;
+	conninfra_wf_cb.pre_cal_cb.get_cal_result_cb = wlanGetCalResultCb;
 #endif /* (CFG_SUPPORT_PRE_ON_PHY_ACTION == 1) */
 
 	conninfra_sub_drv_ops_register(CONNDRV_TYPE_WIFI,
@@ -791,7 +797,7 @@ static irqreturn_t mtk_axi_interrupt(int irq, void *dev_instance)
 	GLUE_INC_REF_CNT(prGlueInfo->prAdapter->rHifStats.u4HwIsrCount);
 	halDisableInterrupt(prGlueInfo->prAdapter);
 
-	if (prGlueInfo->ulFlag & GLUE_FLAG_HALT) {
+	if (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag)) {
 #if AXI_ISR_DEBUG_LOG
 		DBGLOG(HAL, INFO, "GLUE_FLAG_HALT skip INT\n");
 #endif

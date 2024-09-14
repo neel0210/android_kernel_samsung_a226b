@@ -88,9 +88,6 @@ extern int get_logtoomuch_enable(void) __attribute__((weak));
 extern uint32_t get_wifi_standalone_log_mode(void) __attribute__((weak));
 
 extern struct MIB_INFO_STAT g_arMibInfo[ENUM_BAND_NUM];
-#if CFG_SUPPORT_SA_LOG
-extern uint32_t get_wifi_standalone_log_mode(void);
-#endif
 
 /*******************************************************************************
  *                              C O N S T A N T S
@@ -226,7 +223,6 @@ enum ENUM_DBG_MODULE {
 #if CFG_SUPPORT_NAN
 	DBG_NAN_IDX,
 #endif
-	DBG_SA_IDX,		/* 0x2E *//* standalone log */
 	DBG_MODULE_NUM		/* Notice the XLOG check */
 };
 enum ENUM_DBG_ASSERT_CTRL_LEVEL {
@@ -522,7 +518,6 @@ struct CHIP_DBG_OPS {
 #ifdef CFG_SUPPORT_LINK_QUALITY_MONITOR
 	int (*get_rx_rate_info)(
 		struct ADAPTER *prAdapter,
-		uint8_t ucBssIdx,
 		uint32_t *pu4Rate,
 		uint32_t *pu4Nss,
 		uint32_t *pu4RxMode,
@@ -593,8 +588,6 @@ enum WAKE_DATA_TYPE {
 #define MACSTR          "%02x:%02x:**:**:**:%02x"
 #define MAC2STR(a)   ((uint8_t *)a)[0], ((uint8_t *)a)[1], ((uint8_t *)a)[5]
 #endif
-#define RPTMACSTR	"%pM"
-#define RPTMAC2STR(a)	a
 #define PMKSTR "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%03x%02x%02x"
 #if CFG_SHOW_FULL_IPADDR
 /* Debug print format string for the IPv4 Address */
@@ -865,7 +858,6 @@ int32_t halShowStatInfo(struct ADAPTER *prAdapter,
 			u_int8_t fgResetCnt, uint32_t u4StatGroup);
 #ifdef CFG_SUPPORT_LINK_QUALITY_MONITOR
 int connac_get_rx_rate_info(struct ADAPTER *prAdapter,
-	uint8_t ucBssIdx,
 	uint32_t *pu4Rate,
 	uint32_t *pu4Nss,
 	uint32_t *pu4RxMode,
@@ -930,6 +922,7 @@ void connac2x_show_wfdma_dbg_flag_log(
 	struct ADAPTER *prAdapter,
 	enum _ENUM_WFDMA_TYPE_T enum_wfdma_type,
 	uint32_t u4DmaNum);
+void connac2x_show_wfdma_desc(IN struct ADAPTER *prAdapter);
 
 void connac2x_show_wfdma_info_by_type(
 	struct ADAPTER *prAdapter,
@@ -956,7 +949,6 @@ void connac2x_DumpCrRange(
 #ifdef CFG_SUPPORT_LINK_QUALITY_MONITOR
 int connac2x_get_rx_rate_info(
 	struct ADAPTER *prAdapter,
-	uint8_t ucBssIdx,
 	uint32_t *pu4Rate,
 	uint32_t *pu4Nss,
 	uint32_t *pu4RxMode,

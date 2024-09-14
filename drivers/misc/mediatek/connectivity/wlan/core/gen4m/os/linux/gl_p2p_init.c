@@ -79,8 +79,7 @@
  */
 
 #define P2P_INF_NAME "p2p%d"
-
-#define AP_INF_NAME  "swlan%d"
+#define AP_INF_NAME  "ap%d"
 
 /******************************************************************************
  *                             D A T A   T Y P E S
@@ -124,9 +123,7 @@ void p2pSetSuspendMode(struct GLUE_INFO *prGlueInfo, u_int8_t fgEnable)
 	if (!prGlueInfo)
 		return;
 
-	if (!prGlueInfo->prAdapter->fgIsP2PRegistered ||
-		(prGlueInfo->prAdapter->rP2PNetRegState !=
-			ENUM_NET_REG_STATE_REGISTERED)) {
+	if (!prGlueInfo->prAdapter->fgIsP2PRegistered) {
 		DBGLOG(INIT, INFO, "%s: P2P is not enabled, SKIP!\n", __func__);
 		return;
 	}

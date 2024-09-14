@@ -248,10 +248,8 @@ extern bool fgIsTxPowerDecreased;
 #define TRAFFIC_RHRESHOLD	150
 #endif
 
-#if CFG_SUPPORT_SA_LOG
 #define WIFI_LOG_MSG_MAX	(512)
 #define WIFI_LOG_MSG_BUFFER	(WIFI_LOG_MSG_MAX * 2)
-#endif
 
 #if (CFG_SUPPORT_POWER_THROTTLING == 1)
 #define PWR_LEVEL_STAT_UPDATE_INTERVAL	60	/* sec */
@@ -535,20 +533,6 @@ struct PWR_LEVEL_HANDLER_ELEMENT {
 	PFN_PWR_LEVEL_HANDLER prPwrLevelHandler;
 };
 
-struct PARAM_CONNECTIVITY_LOG {
-	uint8_t id;
-	uint8_t len;
-	uint8_t msg[0];
-};
-
-struct BUFFERED_LOG_ENTRY {
-	struct LINK_ENTRY rLinkEntry;
-	uint8_t fgBuffered;
-	uint8_t ucSn;
-	uint8_t ucBssIdx;
-	uint8_t aucLog[64];
-};
-
 /*******************************************************************************
  *                            P U B L I C   D A T A
  *******************************************************************************
@@ -571,14 +555,7 @@ struct BUFFERED_LOG_ENTRY {
 #define KAL_TEST_BIT(bitOffset, value)     test_bit(bitOffset, &value)
 #define SUSPEND_FLAG_FOR_WAKEUP_REASON	(0)
 #define SUSPEND_FLAG_CLEAR_WHEN_RESUME	(1)
-#ifdef CFG_PDMA_SLPPRT_MODE_SUPPORT
-#define GLUE_FLAG_WLAN_RESUME	(2)
-#define GLUE_FLAG_WLAN_SUSPEND  (3)
-#endif
 
-#define KAL_WARN_ON WARN_ON
-#define KAL_IS_ERR IS_ERR
-#define KAL_MIN min
 
 /*----------------------------------------------------------------------------*/
 /* Macros of getting current thread id                                        */
@@ -873,14 +850,6 @@ static inline void kalCfg80211ScanDone(struct cfg80211_scan_request *request,
 })
 #endif
 
-#define kalMemZAlloc(u4Size, eMemType) ({    \
-	void *pvAddr; \
-	pvAddr = kalMemAlloc(u4Size, eMemType); \
-	if (pvAddr) \
-		kalMemSet(pvAddr, 0, u4Size); \
-	pvAddr; \
-})
-
 /*----------------------------------------------------------------------------*/
 /*!
  * \brief Free allocated cache memory
@@ -1084,32 +1053,18 @@ int8_t atoi(uint8_t ch);
 
 #define kalGetTimeTick()                jiffies_to_msecs(jiffies)
 
-#if CFG_SUPPORT_SA_LOG
-#define kalPrintSALogLimited(fmt, ...)					\
+#define kalPrintLogLimited(fmt, ...)					\
 ({									\
 	static DEFINE_RATELIMIT_STATE(_rs,				\
 		DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST);	\
-	ratelimit_set_flags(&_rs, RATELIMIT_MSG_ON_RELEASE);		\
 									\
 	if (__ratelimit(&_rs))						\
-		kalPrintSALog(fmt, ##__VA_ARGS__);			\
+		kalPrintLog(fmt, ##__VA_ARGS__);			\
 })
-#endif
 
 #define WLAN_TAG                        "[wlan]"
-#if CFG_SUPPORT_SA_LOG
-#define kalPrint(_Fmt...) \
-	(get_wifi_standalone_log_mode() == 1) \
-	? kalPrintSALog(WLAN_TAG _Fmt) \
-	: pr_info(WLAN_TAG _Fmt)
-#define kalPrintLimited(_Fmt...) \
-	(get_wifi_standalone_log_mode() == 1) \
-	? kalPrintSALogLimited(WLAN_TAG _Fmt) \
-	: pr_info_ratelimited(WLAN_TAG _Fmt)
-#else
-#define kalPrint(_Fmt...)               pr_info(WLAN_TAG _Fmt)
-#define kalPrintLimited(_Fmt...)        pr_info_ratelimited(WLAN_TAG _Fmt)
-#endif
+#define kalPrint               kalPrintLog
+#define kalPrintLimited(_Fmt...) kalPrintLogLimited(WLAN_TAG _Fmt)
 
 #define kalBreakPoint() \
 do { \
@@ -1338,14 +1293,6 @@ kalUpdateReAssocReqInfo(IN struct GLUE_INFO *prGlueInfo,
 			IN uint8_t *pucFrameBody, IN uint32_t u4FrameBodyLen,
 			IN u_int8_t fgReassocRequest,
 			IN uint8_t ucBssIndex);
-
-#if CFG_SUPPORT_ASSURANCE
-void kalUpdateDeauthInfo(IN struct GLUE_INFO
-			 *prGlueInfo,
-			 IN uint8_t *pucFrameBody,
-			 IN uint32_t u4FrameBodyLen,
-			 IN uint8_t ucBssIndex);
-#endif
 
 void kalUpdateReAssocRspInfo(IN struct GLUE_INFO
 			     *prGlueInfo,
@@ -1885,6 +1832,10 @@ int32_t kalCheckTputLoad(IN struct ADAPTER *prAdapter,
 			 IN int32_t i4Pending,
 			 IN uint32_t u4Used);
 uint32_t kalGetCpuBoostThreshold(void);
+#if CFG_SUPPORT_LITTLE_CPU_BOOST
+uint32_t kalGetLittleCpuBoostThreshold(void);
+#endif /* CFG_SUPPORT_LITTLE_CPU_BOOST */
+int32_t kalCheckVcoreBoost(IN struct ADAPTER *prAdapter, IN uint8_t uBssIndex);
 uint32_t kalGetEmiMetOffset(void);
 void kalSetEmiMetOffset(uint32_t newEmiMetOffset);
 void kalSetRpsMap(IN struct GLUE_INFO *glue, IN unsigned long value);
@@ -1897,7 +1848,7 @@ void kalSetDrvEmiMpuProtection(phys_addr_t emiPhyBase, uint32_t offset,
 #endif
 int32_t kalSetCpuNumFreq(uint32_t u4CoreNum,
 			 uint32_t u4Freq);
-int32_t kalGetFwFlavor(uint8_t *flavor);
+int32_t kalGetFwFlavor(struct ADAPTER *prAdapter, uint8_t *flavor);
 int32_t kalGetFwFlavorByPlat(uint8_t *flavor);
 int32_t kalGetConnsysVerId(void);
 int32_t kalPerMonSetForceEnableFlag(uint8_t uFlag);
@@ -2000,9 +1951,8 @@ void kalSyncTimeToFWByIoctl(void);
 void kalUpdateCompHdlrRec(IN struct ADAPTER *prAdapter,
 	IN PFN_OID_HANDLER_FUNC pfnOidHandler, IN struct CMD_INFO *prCmdInfo);
 
-#if CFG_SUPPORT_SA_LOG
-void kalPrintSALog(const char *fmt, ...);
-#endif
+extern uint32_t get_wifi_standalone_log_mode(void);
+void kalPrintLog(const char *fmt, ...);
 
 #if (CFG_SUPPORT_POWER_THROTTLING == 1)
 void kalPwrLevelHdlrRegister(IN struct ADAPTER *prAdapter,
@@ -2015,14 +1965,5 @@ void connsysPowerTempUpdate(enum conn_pwr_msg_type status,
 uint32_t kalDumpPwrLevel(IN struct ADAPTER *prAdapter);
 #endif
 
-void kalReportWifiLog(struct ADAPTER *prAdapter,
-	uint8_t ucBssIndex, uint8_t *log);
-void kalBufferWifiLog(struct ADAPTER *prAdapter, uint8_t ucBssIndex,
-				uint8_t *log, uint8_t ucSn);
-struct BUFFERED_LOG_ENTRY *kalGetBufferLog(struct ADAPTER *prAdapter,
-	uint8_t ucBssIndex, uint8_t ucSn);
-void kalRemoveBufferLog(struct ADAPTER *prAdapter,
-	struct BUFFERED_LOG_ENTRY *entry);
-void kalClearBufferLog(struct ADAPTER *prAdapter);
 #endif /* _GL_KAL_H */
 

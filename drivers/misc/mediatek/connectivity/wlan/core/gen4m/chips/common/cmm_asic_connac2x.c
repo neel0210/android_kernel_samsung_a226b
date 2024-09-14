@@ -579,6 +579,64 @@ u_int8_t asicConnac2xWfdmaWaitIdle(
 	return FALSE;
 }
 
+
+void asicConnac2xWfdmaTxRingBasePtrExtCtrl(
+	struct GLUE_INFO *prGlueInfo,
+	struct RTMP_TX_RING *tx_ring,
+	u_int32_t index)
+{
+	struct BUS_INFO *prBusInfo;
+	struct ADAPTER *prAdapter = prGlueInfo->prAdapter;
+	uint32_t phy_addr_ext = 0;
+	u_int32_t u4RegValue = 0;
+
+	prBusInfo = prGlueInfo->prAdapter->chip_info->bus_info;
+
+	if (prBusInfo->u4DmaMask <= 32)
+		return;
+
+	phy_addr_ext = (((uint64_t)tx_ring->Cell[0].AllocPa >>
+			DMA_BITS_OFFSET) & DMA_HIGHER_4BITS_MASK) << 16;
+
+	HAL_MCR_RD(prAdapter, tx_ring->hw_cnt_addr,
+			&u4RegValue);
+
+	phy_addr_ext |= u4RegValue;
+	DBGLOG(HAL, INFO, "phy_addr_ext=0x%x\n", phy_addr_ext);
+
+	HAL_MCR_WR(prAdapter, tx_ring->hw_cnt_addr,
+			phy_addr_ext);
+}
+
+void asicConnac2xWfdmaRxRingBasePtrExtCtrl(
+	struct GLUE_INFO *prGlueInfo,
+	struct RTMP_RX_RING *rx_ring,
+	u_int32_t index)
+{
+	struct BUS_INFO *prBusInfo;
+	struct ADAPTER *prAdapter = prGlueInfo->prAdapter;
+	uint32_t phy_addr_ext = 0;
+	u_int32_t u4RegValue = 0;
+
+	prBusInfo = prGlueInfo->prAdapter->chip_info->bus_info;
+
+	if (prBusInfo->u4DmaMask <= 32)
+		return;
+
+	phy_addr_ext = (((uint64_t)rx_ring->Cell[0].AllocPa >>
+			DMA_BITS_OFFSET) & DMA_HIGHER_4BITS_MASK) << 16;
+
+	HAL_MCR_RD(prAdapter, rx_ring->hw_cnt_addr,
+			&u4RegValue);
+
+	phy_addr_ext |= u4RegValue;
+	DBGLOG(HAL, INFO, "phy_addr_ext=0x%x\n", phy_addr_ext);
+
+	HAL_MCR_WR(prAdapter, rx_ring->hw_cnt_addr,
+			phy_addr_ext);
+}
+
+
 void asicConnac2xWfdmaTxRingExtCtrl(
 	struct GLUE_INFO *prGlueInfo,
 	struct RTMP_TX_RING *tx_ring,
@@ -610,6 +668,9 @@ void asicConnac2xWfdmaTxRingExtCtrl(
 		prBusInfo->host_tx_ring_ext_ctrl_base + ext_offset;
 	HAL_MCR_WR(prAdapter, tx_ring->hw_desc_base_ext,
 		   CONNAC2X_TX_RING_DISP_MAX_CNT);
+
+	asicConnac2xWfdmaTxRingBasePtrExtCtrl(prGlueInfo,
+		tx_ring, index);
 }
 
 void asicConnac2xWfdmaRxRingExtCtrl(
@@ -657,6 +718,9 @@ void asicConnac2xWfdmaRxRingExtCtrl(
 
 	HAL_MCR_WR(prAdapter, rx_ring->hw_desc_base_ext,
 		   CONNAC2X_RX_RING_DISP_MAX_CNT);
+
+	asicConnac2xWfdmaRxRingBasePtrExtCtrl(prGlueInfo,
+		rx_ring, index);
 }
 
 void asicConnac2xWfdmaManualPrefetch(
@@ -1689,7 +1753,6 @@ void asicConnac2xRxProcessRxvforMSP(IN struct ADAPTER *prAdapter,
 
 	prGroup3 =
 		(struct HW_MAC_RX_STS_GROUP_3_V2 *)prRetSwRfb->prRxStatusGroup3;
-
 	if (prRetSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_3)) {
 		/* P-RXV1[0:31] */
 		prAdapter->arStaRec[
@@ -1821,37 +1884,26 @@ void asicConnac2xRxPerfIndProcessRXV(IN struct ADAPTER *prAdapter,
 			       IN struct SW_RFB *prSwRfb,
 			       IN uint8_t ucBssIndex)
 {
-	struct GLUE_INFO *prGlueInfo;
 	struct HW_MAC_RX_STS_GROUP_3 *prRxStatusGroup3;
 	uint8_t ucRCPI0 = 0, ucRCPI1 = 0;
-	uint32_t u4PhyRate;
-	uint16_t u2Rate = 0; /* Unit 500 Kbps */
-	struct RateInfo rRateInfo = {0};
-	int status;
 
 	ASSERT(prAdapter);
 	ASSERT(prSwRfb);
 	/* REMOVE DATA RATE Parsing Logic:Workaround only for 6885*/
 	/* Since MT6885 can not get Rx Data Rate dur to RXV HW Bug*/
 
-	prGlueInfo = prAdapter->prGlueInfo;
-	status = wlanGetRxRate(prGlueInfo, ucBssIndex, &u4PhyRate, NULL,
-				&rRateInfo);
-	/* ucRate(500kbs) = u4PhyRate(100kbps) */
-	if (status < 0 || u4PhyRate == 0)
+	if (ucBssIndex >= BSSID_NUM)
 		return;
-	u2Rate = u4PhyRate / 5;
 
-	if (rRateInfo.u4Nss == 1) {
-		if (prGlueInfo->PerfIndCache.ucCurRxNss[ucBssIndex] < 0xff)
-			prGlueInfo->PerfIndCache.ucCurRxNss[ucBssIndex]++;
-	} else if (rRateInfo.u4Nss == 2) {
-		if (prGlueInfo->PerfIndCache.ucCurRxNss2[ucBssIndex] < 0xff)
-			prGlueInfo->PerfIndCache.ucCurRxNss2[ucBssIndex]++;
+	/* can't parse radiotap info if no rx vector */
+	if (((prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_2)) == 0)
+		|| ((prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_3)) == 0)) {
+		return;
 	}
 
-	/* RCPI */
 	prRxStatusGroup3 = prSwRfb->prRxStatusGroup3;
+
+	/* RCPI */
 	ucRCPI0 = HAL_RX_STATUS_GET_RCPI0(prRxStatusGroup3);
 	ucRCPI1 = HAL_RX_STATUS_GET_RCPI1(prRxStatusGroup3);
 
@@ -2403,7 +2455,8 @@ bool asicConnac2xSwIntHandler(struct ADAPTER *prAdapter)
 			&prChipInfo->bus_info->rSwWfdmaInfo;
 
 		if (prSwWfdmaInfo->fgIsEnSwWfdma) {
-			if (prAdapter->prGlueInfo->ulFlag & GLUE_FLAG_HALT) {
+			if (test_bit(GLUE_FLAG_HALT_BIT,
+				&prAdapter->prGlueInfo->ulFlag)) {
 				DBGLOG(HAL, TRACE,
 					"GLUE_FLAG_HALT skip SwWfdma INT\n");
 			} else {
@@ -2432,7 +2485,7 @@ int asicConnac2xPwrOnWmMcu(struct mt66xx_chip_info *chip_info)
 		return -EOPNOTSUPP;
 
 	/* conninfra power on */
-	if (!kalIsWholeChipResetting()) {
+	if (!kalIsWholeChipResetting() && !get_pre_cal_status()) {
 		ret = conninfra_pwr_on(CONNDRV_TYPE_WIFI);
 		if (ret == CONNINFRA_ERR_RST_ONGOING) {
 			DBGLOG(INIT, ERROR,

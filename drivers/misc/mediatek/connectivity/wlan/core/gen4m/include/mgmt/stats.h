@@ -179,11 +179,9 @@ void StatsEnvRxTime2Host(IN struct ADAPTER *prAdapter,
 			 struct sk_buff *prSkb,
 			 struct net_device *prNetDev);
 
-void StatsRxPktInfoDisplay(struct SW_RFB *prSwRfb,
-	struct ADAPTER *prAdapter, uint8_t ucBssIndex);
+void StatsRxPktInfoDisplay(struct SW_RFB *prSwRfb);
 
-void StatsTxPktInfoDisplay(struct sk_buff *prSkb,
-	struct ADAPTER *prAdapter, uint8_t ucBssIndex);
+void StatsTxPktInfoDisplay(struct sk_buff *prSkb);
 
 void StatsResetTxRx(void);
 

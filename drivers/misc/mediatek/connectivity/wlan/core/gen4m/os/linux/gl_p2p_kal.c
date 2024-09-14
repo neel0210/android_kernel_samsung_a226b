@@ -214,8 +214,7 @@ kalP2PUpdateAssocInfo(IN struct GLUE_INFO *prGlueInfo,
 	wrqu.data.length = pucDesiredIE[1] + 2;
 
 	prBssInfo = GET_BSS_INFO_BY_INDEX(prGlueInfo->prAdapter, ucBssIndex);
-	if (!prBssInfo)
-		return;
+
 	if (ucBssIndex == prGlueInfo->prAdapter->ucP2PDevBssIdx)
 		prNetdevice = prGlueInfo->prP2PInfo
 			[prBssInfo->u4PrivateData]->prDevHandler;
@@ -1166,7 +1165,7 @@ kalP2PIndicateChannelExpired(IN struct GLUE_INFO *prGlueInfo,
 			break;
 		}
 
-		DBGLOG(P2P, TRACE, "cookie:0x%llx\n", u8SeqNum);
+		DBGLOG(P2P, TRACE, "kalP2PIndicateChannelExpired\n");
 
 		rRfChannelInfo.eBand = eBand;
 		rRfChannelInfo.ucChannelNum = u4ChannelNum;
@@ -1355,9 +1354,6 @@ void kalP2PIndicateMgmtTxStatus(IN struct GLUE_INFO *prGlueInfo,
 				GET_BSS_INFO_BY_INDEX(prGlueInfo->prAdapter,
 				prMsduInfo->ucBssIndex);
 
-			if (prP2pBssInfo == NULL)
-				return;
-
 			prGlueP2pInfo =
 				prGlueInfo->prP2PInfo
 					[prP2pBssInfo->u4PrivateData];
@@ -1367,9 +1363,6 @@ void kalP2PIndicateMgmtTxStatus(IN struct GLUE_INFO *prGlueInfo,
 
 			prNetdevice = prGlueP2pInfo->aprRoleHandler;
 		}
-
-		p2pFuncRemovePendingMgmtLinkEntry(prGlueInfo->prAdapter,
-			prMsduInfo->ucBssIndex, *pu8GlCookie);
 
 		cfg80211_mgmt_tx_status(
 			/* struct net_device * dev, */
@@ -1463,7 +1456,7 @@ kalP2PIndicateRxMgmtFrame(IN struct ADAPTER *prAdapter,
 				prNetdevice);
 
 		if (!prGlueInfo->fgIsRegistered ||
-			(prGlueInfo->ulFlag & GLUE_FLAG_HALT) ||
+			test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag) ||
 			!prGlueInfo->prAdapter->fgIsP2PRegistered ||
 			(prGlueInfo->prAdapter->rP2PNetRegState !=
 				ENUM_NET_REG_STATE_REGISTERED) ||
@@ -1519,6 +1512,7 @@ kalP2PIndicateRxMgmtFrame(IN struct ADAPTER *prAdapter,
 
 }				/* kalP2PIndicateRxMgmtFrame */
 
+#if CFG_WPS_DISCONNECT || (KERNEL_VERSION(4, 4, 0) <= CFG80211_VERSION_CODE)
 void
 kalP2PGCIndicateConnectionStatus(IN struct GLUE_INFO *prGlueInfo,
 		IN uint8_t ucRoleIndex,
@@ -1547,7 +1541,7 @@ kalP2PGCIndicateConnectionStatus(IN struct GLUE_INFO *prGlueInfo,
 				NETREG_REGISTERED) ||
 		    (prAdapter->rP2PNetRegState !=
 				ENUM_NET_REG_STATE_REGISTERED) ||
-		    ((prGlueInfo->ulFlag & GLUE_FLAG_HALT) == 1)) {
+		    (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag) == 1)) {
 			break;
 		}
 
@@ -1567,25 +1561,77 @@ kalP2PGCIndicateConnectionStatus(IN struct GLUE_INFO *prGlueInfo,
 
 			prP2pConnInfo->eConnRequest = P2P_CONNECTION_TYPE_IDLE;
 		} else {
-			DBGLOG(INIT, INFO,
-				"indicate disconnection event to kernel, reason=%d, locally_generated=%d\n",
-				u2StatusReason,
-				eStatus == WLAN_STATUS_MEDIA_DISCONNECT_LOCALLY
-				);
 			/* Disconnect, what if u2StatusReason == 0? */
 			cfg80211_disconnected(prGlueP2pInfo->aprRoleHandler,
 				/* struct net_device * dev, */
 				u2StatusReason,
 				pucRxIEBuf, u2RxIELen,
-#if CFG_WPS_DISCONNECT || (KERNEL_VERSION(4, 4, 0) <= CFG80211_VERSION_CODE)
 				eStatus == WLAN_STATUS_MEDIA_DISCONNECT_LOCALLY,
-#endif
 				GFP_KERNEL);
 		}
 
 	} while (FALSE);
 
 }				/* kalP2PGCIndicateConnectionStatus */
+
+#else
+void
+kalP2PGCIndicateConnectionStatus(IN struct GLUE_INFO *prGlueInfo,
+		IN uint8_t ucRoleIndex,
+		IN struct P2P_CONNECTION_REQ_INFO *prP2pConnInfo,
+		IN uint8_t *pucRxIEBuf,
+		IN uint16_t u2RxIELen,
+		IN uint16_t u2StatusReason)
+{
+	struct GL_P2P_INFO *prGlueP2pInfo = (struct GL_P2P_INFO *) NULL;
+	struct ADAPTER *prAdapter = NULL;
+
+	do {
+		if (prGlueInfo == NULL) {
+			ASSERT(FALSE);
+			break;
+		}
+
+		prAdapter = prGlueInfo->prAdapter;
+		prGlueP2pInfo = prGlueInfo->prP2PInfo[ucRoleIndex];
+
+		/* FIXME: This exception occurs at wlanRemove. */
+		if ((prGlueP2pInfo == NULL) ||
+		    (prGlueP2pInfo->aprRoleHandler == NULL) ||
+		    (prAdapter->rP2PNetRegState !=
+				ENUM_NET_REG_STATE_REGISTERED) ||
+		    (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag) == 1)) {
+			break;
+		}
+
+		if (prP2pConnInfo) {
+			/* switch netif on */
+			netif_carrier_on(prGlueP2pInfo->aprRoleHandler);
+
+			cfg80211_connect_result(prGlueP2pInfo->aprRoleHandler,
+				/* struct net_device * dev, */
+				prP2pConnInfo->aucBssid,
+				prP2pConnInfo->aucIEBuf,
+				prP2pConnInfo->u4BufLength,
+				pucRxIEBuf, u2RxIELen,
+				u2StatusReason,
+				/* gfp_t gfp *//* allocation flags */
+				GFP_KERNEL);
+
+			prP2pConnInfo->eConnRequest = P2P_CONNECTION_TYPE_IDLE;
+		} else {
+			/* Disconnect, what if u2StatusReason == 0? */
+			cfg80211_disconnected(prGlueP2pInfo->aprRoleHandler,
+				/* struct net_device * dev, */
+				u2StatusReason, pucRxIEBuf,
+				u2RxIELen, GFP_KERNEL);
+		}
+
+	} while (FALSE);
+
+}				/* kalP2PGCIndicateConnectionStatus */
+
+#endif
 
 void
 kalP2PGOStationUpdate(IN struct GLUE_INFO *prGlueInfo,
@@ -1636,7 +1682,8 @@ kalP2PGOStationUpdate(IN struct GLUE_INFO *prGlueInfo,
 			/* FIXME: The exception occurs at wlanRemove, and
 			 *    check GLUE_FLAG_HALT is the temporarily solution.
 			 */
-			if ((prGlueInfo->ulFlag & GLUE_FLAG_HALT) == 0) {
+			if (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag)
+				== 0) {
 				if (prCliStaRec->fgIsConnected == FALSE)
 					break;
 				prCliStaRec->fgIsConnected = FALSE;
@@ -1644,11 +1691,6 @@ kalP2PGOStationUpdate(IN struct GLUE_INFO *prGlueInfo,
 					/* struct net_device * dev, */
 					prCliStaRec->aucMacAddr, GFP_KERNEL);
 			}
-#if CFG_TC10_FEATURE
-			kalMemCopy(&prGlueInfo->prAdapter->rSapLastStaRec,
-					prCliStaRec, sizeof(struct STA_RECORD));
-			prGlueInfo->prAdapter->fgSapLastStaRecSet = 1;
-#endif
 		}
 
 	} while (FALSE);
@@ -1939,7 +1981,7 @@ u_int8_t kalP2PSetBlackList(IN struct GLUE_INFO *prGlueInfo,
 				&(prGlueInfo->prP2PInfo[ucRoleIndex]
 				->aucblackMACList[i]), rbssid)) {
 				DBGLOG(P2P, WARN, MACSTR
-					" already in block list\n",
+					" already in black list\n",
 					MAC2STR(rbssid));
 				return FALSE;
 			}

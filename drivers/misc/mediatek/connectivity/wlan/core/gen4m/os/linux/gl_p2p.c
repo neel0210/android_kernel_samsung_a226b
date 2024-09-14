@@ -810,7 +810,6 @@ u_int8_t p2PAllocInfo(IN struct GLUE_INFO *prGlueInfo, IN uint8_t ucIdex)
 u_int8_t p2PFreeInfo(struct GLUE_INFO *prGlueInfo, uint8_t ucIdx)
 {
 	struct ADAPTER *prAdapter = prGlueInfo->prAdapter;
-	struct P2P_PENDING_MGMT_INFO *prPendingMgmtInfo = NULL;
 
 	ASSERT(prGlueInfo);
 	ASSERT(prAdapter);
@@ -864,16 +863,6 @@ u_int8_t p2PFreeInfo(struct GLUE_INFO *prGlueInfo, uint8_t ucIdx)
 			prGlueInfo->prP2PInfo[ucIdx]->chandef = NULL;
 		}
 #endif
-
-		while (!LINK_IS_EMPTY(&prGlueInfo->prP2PInfo[ucIdx]->rWaitTxDoneLink)) {
-			LINK_REMOVE_HEAD(
-				&prGlueInfo->prP2PInfo[ucIdx]->rWaitTxDoneLink,
-				prPendingMgmtInfo,
-				struct P2P_PENDING_MGMT_INFO *);
-			DBGLOG(P2P, INFO, "Free pending mgmt link[%u] cookie: 0x%llx\n",
-				ucIdx, prPendingMgmtInfo->u8PendingMgmtCookie);
-			cnmMemFree(prAdapter, prPendingMgmtInfo);
-		}
 
 		kalMemFree(prGlueInfo->prP2PInfo[ucIdx],
 			VIR_MEM_TYPE,
@@ -1244,7 +1233,6 @@ int glSetupP2P(struct GLUE_INFO *prGlueInfo, struct wireless_dev *prP2pWdev,
 
 	/* XXX: All the P2P/AP devices do p2pDevFsmInit in the original code */
 	p2pDevFsmInit(prAdapter);
-	LINK_INITIALIZE(&prP2PInfo->rWaitTxDoneLink);
 	prP2PInfo->aprRoleHandler = prP2PInfo->prDevHandler;
 
 	DBGLOG(P2P, INFO,
@@ -2020,8 +2008,6 @@ netdev_tx_t p2pHardStartXmit(IN struct sk_buff *prSkb,
 
 	kalHardStartXmit(prSkb, prDev, prGlueInfo, ucBssIndex);
 	prP2pBssInfo = GET_BSS_INFO_BY_INDEX(prGlueInfo->prAdapter, ucBssIndex);
-	if (!prP2pBssInfo)
-		return NETDEV_TX_BUSY;
 	if ((prP2pBssInfo->eConnectionState == MEDIA_STATE_CONNECTED) ||
 		(prP2pBssInfo->rStaRecOfClientList.u4NumElem > 0))
 		kalPerMonStart(prGlueInfo);

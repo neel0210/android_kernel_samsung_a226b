@@ -1205,7 +1205,7 @@ struct MSDU_INFO *qmEnqueueTxPackets(IN struct ADAPTER *prAdapter,
 
 			case STA_REC_INDEX_NOT_FOUND:
 				/* Drop packet if no STA_REC is found */
-				DBGLOG(QM, TRACE,
+				DBGLOG(QM, INFO,
 					"Drop the Packet for no STA_REC\n");
 
 				prTxQue = &rNotEnqueuedQue;
@@ -1262,7 +1262,7 @@ struct MSDU_INFO *qmEnqueueTxPackets(IN struct ADAPTER *prAdapter,
 			}
 
 		} else {
-			DBGLOG(QM, TRACE,
+			DBGLOG(QM, INFO,
 				"Drop the Packet for inactive Bss %u\n",
 				prCurrentMsduInfo->ucBssIndex);
 			QM_DBG_CNT_INC(prQM, QM_DBG_CNT_31);
@@ -1715,8 +1715,9 @@ qmDequeueTxPacketsFromPerStaQueues(IN struct ADAPTER *prAdapter,
 						rCurrentTime,
 						prStaRec->rNanExpiredSendTime);
 
-					/* avoid to flood the kernel log, */
-					/*only the 1st expiry event logged */
+					/* avoid to flood the kernel log,
+					 * only the 1st expiry event logged
+					 */
 					if (fgExpired &&
 					    !prStaRec->fgNanSendTimeExpired)
 						DBGLOG(NAN, TEMP,
@@ -1761,6 +1762,15 @@ qmDequeueTxPacketsFromPerStaQueues(IN struct ADAPTER *prAdapter,
 					prDequeuedPkt->ucPsForwardingType =
 						PS_FORWARDING_MORE_DATA_ENABLED;
 				}
+
+				if (unlikely(prStaRec->ucBssIndex !=
+					prDequeuedPkt->ucBssIndex)) {
+					DBGLOG(QM, INFO,
+						"BssIdx mismatch [%d,%d]",
+						prStaRec->ucBssIndex,
+						prDequeuedPkt->ucBssIndex);
+				}
+
 				/* to record WMM Set */
 				prDequeuedPkt->ucWmmQueSet =
 					prBssInfo->ucWmmQueSet;
@@ -3021,7 +3031,6 @@ struct SW_RFB *qmHandleRxPackets(IN struct ADAPTER *prAdapter,
 	uint8_t *pucEthDestAddr;
 	u_int8_t fgIsBMC, fgIsHTran;
 	u_int8_t fgMicErr;
-	struct BSS_INFO *prBssInfoIso = NULL;
 #if CFG_SUPPORT_REPLAY_DETECTION
 	u_int8_t ucBssIndexRly = 0;
 	struct BSS_INFO *prBssInfoRly = NULL;
@@ -3359,28 +3368,6 @@ struct SW_RFB *qmHandleRxPackets(IN struct ADAPTER *prAdapter,
 						prCurrSwRfb->
 						u2PacketLen);
 				}
-			}
-		}
-		/*
-		 * Independent pkt is marked in stats,
-		 * so it should be placed before rx reordering
-		 */
-		prBssInfoIso = GET_BSS_INFO_BY_INDEX(prAdapter,
-						secGetBssIdxByWlanIdx(prAdapter,
-						prCurrSwRfb->ucWlanIdx));
-
-		if (prBssInfoIso && prBssInfoIso->fgIsApIsolate &&
-			IS_BSS_APGO(prBssInfoIso)) {
-
-			if (p2pFuncIsApIsolate(prAdapter,
-				prCurrSwRfb, prBssInfoIso)) {
-				DBGLOG(QM, TRACE, "ap isolate met\n");
-				RX_INC_CNT(&prAdapter->rRxCtrl,
-						RX_AP_ISO_DROP_COUNT);
-				prCurrSwRfb->eDst = RX_PKT_DESTINATION_NULL;
-				QUEUE_INSERT_TAIL(prReturnedQue,
-					(struct QUE_ENTRY *) prCurrSwRfb);
-				continue;
 			}
 		}
 
@@ -5537,7 +5524,8 @@ void mqmProcessAssocRsp(IN struct ADAPTER *prAdapter,
 			}
 		}
 		/* Parse AC parameters and write to HW CRs */
-		if (prStaRec->fgIsQoS) {
+		if ((prStaRec->fgIsQoS)
+			&& (prStaRec->eStaType == STA_TYPE_LEGACY_AP)) {
 			mqmParseEdcaParameters(prAdapter, prSwRfb, pucIEStart,
 				u2IELength, TRUE);
 #if (CFG_SUPPORT_802_11AX == 1)
@@ -6092,27 +6080,6 @@ void mqmProcessScanResult(IN struct ADAPTER *prAdapter,
 			prStaRec->fgSupportBTM =
 				!!((*(uint32_t *)(pucIE + 2)) &
 			BIT(ELEM_EXT_CAP_BSS_TRANSITION_BIT));
-#if CFG_TC10_FEATURE
-			prStaRec->fgSupportProxyARP =
-				!!((*(uint32_t *)(pucIE + 2)) &
-			BIT(ELEM_EXT_CAP_PROXY_ARP_BIT));
-
-			prStaRec->fgSupportTFS =
-				!!((*(uint32_t *)(pucIE + 2)) &
-			BIT(ELEM_EXT_CAP_TFS_BIT));
-
-			prStaRec->fgSupportWNMSleep =
-				!!((*(uint32_t *)(pucIE + 2)) &
-			BIT(ELEM_EXT_CAP_WNM_SLEEP_BIT));
-
-			prStaRec->fgSupportTIMBcast =
-				!!((*(uint32_t *)(pucIE + 2)) &
-			BIT(ELEM_EXT_CAP_TIM_BCAST_BIT));
-
-			prStaRec->fgSupportDMS =
-				!!((*(uint32_t *)(pucIE + 2)) &
-			BIT(ELEM_EXT_CAP_DMS_BIT));
-#endif
 #endif
 			prStaRec->fgIsMscsSupported = wlanCheckExtCapBit(
 				prStaRec, pucIE, ELEM_EXT_CAP_MSCS_BIT);
@@ -6650,8 +6617,7 @@ enum ENUM_FRAME_ACTION qmGetFrameAction(IN struct ADAPTER *prAdapter,
 	DEBUGFUNC("qmGetFrameAction");
 
 	prBssInfo = GET_BSS_INFO_BY_INDEX(prAdapter, ucBssIndex);
-	prStaRec = cnmGetStaRecByIndexWithoutInUseCheck(prAdapter,
-			ucStaRecIdx);
+	prStaRec = QM_GET_STA_REC_PTR_FROM_INDEX(prAdapter, ucStaRecIdx);
 
 	do {
 		/* 4 <1> Tx, if FORCE_TX is set */
@@ -6727,6 +6693,7 @@ enum ENUM_FRAME_ACTION qmGetFrameAction(IN struct ADAPTER *prAdapter,
 				}
 			}
 		}
+
 	} while (FALSE);
 
 	/* <5> Resource CHECK! */
@@ -8957,15 +8924,13 @@ void qmCheckRxEAPOLM3(IN struct ADAPTER *prAdapter,
 			m = ((u2KeyInfo & 0x1100) == 0x0000 ||
 				(u2KeyInfo & 0x0008) == 0x0000) ? 1 : 3;
 
-			if (m == 3 &&
-				prWpaInfo->u4WpaVersion ==
-					IW_AUTH_WPA_VERSION_WPA &&
-				prWpaInfo->u4CipherPairwise ==
-					IW_AUTH_CIPHER_TKIP &&
-				!prSwRfb->prStaRec->fgIsTxKeyReady) {
+			if (prAdapter->rWifiVar.u4SwTestMode ==
+					ENUM_SW_TEST_MODE_SIGMA_HS20_R2 &&
+					m == 3 &&
+					!prSwRfb->prStaRec->fgIsTxKeyReady) {
 				prAdapter->fgIsPostponeTxEAPOLM3 = TRUE;
 				DBGLOG(QM, INFO,
-					"[WPA1 TKIP] Postpone sending EAPOL M4 until PTK installed!");
+					"[Passpoint] Postpone sending EAPOL M4 until PTK installed!");
 			}
 		}
 	}

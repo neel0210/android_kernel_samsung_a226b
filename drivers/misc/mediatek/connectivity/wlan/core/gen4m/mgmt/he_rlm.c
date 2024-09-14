@@ -493,10 +493,10 @@ static void heRlmFillHeCapIE(
 		if (prAisFsmInfo != NULL)
 			prBssDesc = prAisFsmInfo->prTargetBssDesc;
 		if (prBssDesc != NULL &&
-			queryAxBlocklist(prAdapter, prBssDesc->aucBSSID,
+			queryAxBlacklist(prAdapter, prBssDesc->aucBSSID,
 			    prBssInfo->ucBssIndex, BLACKLIST_DIS_HE_HTC)) {
 			DBGLOG(BSS, INFO,
-			    "BSSID " MACSTR " is in HTC blocklist!\n",
+			    "BSSID " MACSTR " is in HTC blacklist!\n",
 			    MAC2STR(prBssDesc->aucBSSID));
 		} else {
 			HE_SET_MAC_CAP_HTC_HE(prHeCap->ucHeMacCap);
@@ -607,6 +607,7 @@ static void heRlmFillHeCapIE(
 		HE_SET_PHY_CAP_CODE_BOOK_7_5_MU_FB(prHeCap->ucHePhyCap);
 		HE_SET_PHY_CAP_TRIG_SU_BF_FB(prHeCap->ucHePhyCap);
 		HE_SET_PHY_CAP_TRIG_MU_BF_PARTIAL_BW_FB(prHeCap->ucHePhyCap);
+		HE_SET_PHY_CAP_SU_MU_4X_HE_LTF(prHeCap->ucHePhyCap);
 		HE_SET_PHY_CAP_MAX_NC(prHeCap->ucHePhyCap, ucSupportedNss);
 	}
 #endif
@@ -1017,6 +1018,28 @@ static void heRlmRecHePPEThresholds(struct ADAPTER *prAdapter,
 		}
 	}
 }
+
+#if (CFG_SUPPORT_WIFI_6G == 1)
+void heRlmRecHe6GCapInfo(
+	struct ADAPTER *prAdapter,
+	struct STA_RECORD *prStaRec,
+	uint8_t *pucIE)
+{
+	struct _IE_HE_6G_BAND_CAP_T *prHe6GCap =
+		(struct _IE_HE_6G_BAND_CAP_T *) pucIE;
+
+	/* if payload not contain any aucVarInfo,
+	 * IE size = sizeof(struct _IE_HE_6G_BAND_CAP_T)
+	 */
+	if (IE_SIZE(prHe6GCap) < (sizeof(struct _IE_HE_6G_BAND_CAP_T))) {
+		DBGLOG(SCN, WARN,
+			"HE_6G_CAP IE_LEN err(%d)!\n", IE_LEN(prHe6GCap));
+		return;
+	}
+
+	prStaRec->u2He6gBandCapInfo = prHe6GCap->u2CapInfo;
+}
+#endif
 
 void heRlmRecHeCapInfo(
 	struct ADAPTER *prAdapter,

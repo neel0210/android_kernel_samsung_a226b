@@ -225,8 +225,6 @@ void aaaFsmRunEventTxReqTimeOut(IN struct ADAPTER *prAdapter,
 
 	if (!prStaRec)
 		return;
-	if (prStaRec->ucBssIndex > MAX_BSSID_NUM)
-		return;
 
 	prBssInfo = GET_BSS_INFO_BY_INDEX(prAdapter, prStaRec->ucBssIndex);
 
@@ -654,8 +652,7 @@ uint32_t aaaFsmRunEventRxAssoc(IN struct ADAPTER *prAdapter,
 				GET_BSS_INFO_BY_INDEX(prAdapter,
 					prStaRec->ucBssIndex);
 
-			if (prBssInfo &&
-				prBssInfo->fgIsNetActive) {
+			if (prBssInfo->fgIsNetActive) {
 
 				/* 4 <2.1> Validate Assoc Req Frame and
 				 * get Status Code
@@ -695,8 +692,7 @@ uint32_t aaaFsmRunEventRxAssoc(IN struct ADAPTER *prAdapter,
 			prBssInfo =
 				GET_BSS_INFO_BY_INDEX(prAdapter,
 					prStaRec->ucBssIndex);
-			if (!prBssInfo)
-				break;
+
 			if ((prBssInfo->fgIsNetActive)
 				&& (prBssInfo->eCurrentOPMode == OP_MODE_BOW)) {
 

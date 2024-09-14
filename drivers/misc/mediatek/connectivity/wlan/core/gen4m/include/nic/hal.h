@@ -1161,7 +1161,7 @@ uint32_t halGetChipSwVer(IN struct ADAPTER *prAdapter);
 uint32_t halRxWaitResponse(IN struct ADAPTER *prAdapter,
 	IN uint8_t ucPortIdx, OUT uint8_t *pucRspBuffer,
 	IN uint32_t u4MaxRespBufferLen, OUT uint32_t *pu4Length,
-	IN uint32_t u4WaitingInterval);
+	IN uint32_t u4WaitingInterval, IN uint32_t u4TimeoutValue);
 
 void halEnableInterrupt(IN struct ADAPTER *prAdapter);
 void halDisableInterrupt(IN struct ADAPTER *prAdapter);
@@ -1177,7 +1177,6 @@ void halWakeUpWiFi(IN struct ADAPTER *prAdapter);
 void halTxCancelSendingCmd(IN struct ADAPTER *prAdapter,
 	IN struct CMD_INFO *prCmdInfo);
 void halTxCancelAllSending(IN struct ADAPTER *prAdapter);
-u_int8_t halTxIsCmdBufEnough(IN struct ADAPTER *prAdapter);
 u_int8_t halTxIsDataBufEnough(IN struct ADAPTER *prAdapter,
 	IN struct MSDU_INFO *prMsduInfo);
 void halProcessTxInterrupt(IN struct ADAPTER *prAdapter);
@@ -1225,10 +1224,6 @@ void halTxReturnFreeResource_v1(IN struct ADAPTER *prAdapter,
 	IN uint16_t *au2TxDoneCnt);
 uint8_t halTxRingDataSelect(IN struct ADAPTER *prAdapter,
 	IN struct MSDU_INFO *prMsduInfo);
-#ifdef CFG_PDMA_SLPPRT_MODE_SUPPORT
-void halPdmaSlpprotOp(IN struct GLUE_INFO *prGlueInfo,
-							IN uint8_t ucEnable);
-#endif
 void halUpdateTxMaxQuota(IN struct ADAPTER *prAdapter);
 void halNotifyMdCrash(IN struct ADAPTER *prAdapter);
 bool halIsTxBssCntFull(struct ADAPTER *prAdapter, uint8_t ucBssIndex);

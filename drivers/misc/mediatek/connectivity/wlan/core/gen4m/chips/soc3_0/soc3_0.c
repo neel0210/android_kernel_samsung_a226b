@@ -535,6 +535,8 @@ void soc3_0asicConnac2xWpdmaConfig(
 	uint32_t u4DmaCfgCr = 0;
 	uint32_t idx, u4DmaNum = 1;
 	struct mt66xx_chip_info *chip_info = prAdapter->chip_info;
+	struct BUS_INFO *prBusInfo =
+			prGlueInfo->prAdapter->chip_info->bus_info;
 
 	if (chip_info->is_support_wfdma1)
 		u4DmaNum++;
@@ -554,6 +556,8 @@ void soc3_0asicConnac2xWpdmaConfig(
 				asicConnac2xWfdmaCfgAddrGet(prGlueInfo, idx);
 			GloCfg[idx].field_conn2x.tx_dma_en = 1;
 			GloCfg[idx].field_conn2x.rx_dma_en = 1;
+			GloCfg[idx].field_conn2x.pdma_addr_ext_en =
+				(prBusInfo->u4DmaMask > 32) ? 1 : 0;
 			HAL_MCR_WR(prAdapter, u4DmaCfgCr, GloCfg[idx].word);
 		}
 	}
@@ -810,7 +814,7 @@ void soc3_0_ConstructPatchName(struct GLUE_INFO *prGlueInfo,
 	int ret = 0;
 	uint8_t aucFlavor[2] = {0};
 
-	kalGetFwFlavor(&aucFlavor[0]);
+	kalGetFwFlavor(prGlueInfo->prAdapter, &aucFlavor[0]);
 
 	ret = kalSnprintf(apucName[(*pucNameIdx)],
 			SOC3_0_FILE_NAME_MAX,
@@ -1580,7 +1584,9 @@ static void soc3_0_DumpOtherCr(struct ADAPTER *prAdapter)
 {
 #define	HANG_OTHER_LOG_NUM		2
 
-	connac2x_DumpCrRange(NULL, 0x18060260, HANG_OTHER_LOG_NUM,
+	connac2x_DumpCrRange(NULL,
+		CONN_MCU_CONFG_ON_HOST_MAILBOX_WF_ADDR,
+		HANG_OTHER_LOG_NUM,
 		"mailbox and other CRs");
 	connac2x_DumpCrRange(NULL, 0x180602c0, 8, "DBG_DUMMY");
 	connac2x_DumpCrRange(NULL, 0x180602e0, 4, "BT_CSR_DUMMY");
@@ -1873,10 +1879,9 @@ int soc3_0_CheckBusHang(void *adapter, uint8_t ucWfResetEnable)
 *  - 0x1806_0260[31] should be 1'b1  (FW view 0x8900_0100[31])
 */
 
-			u4Cr = 0x18060260;
+			u4Cr = CONN_MCU_CONFG_ON_HOST_MAILBOX_WF_ADDR;
 			connac2x_DbgCrRead(prAdapter, u4Cr, &u4Value);
-
-			if ((u4Value&BIT(31)) != BIT(31)) {
+			if ((u4Value & BIT(31)) != BIT(31)) {
 				DBGLOG(HAL, ERROR,
 					"Bus hang check: 0x%08x = 0x%08x\n",
 					u4Cr, u4Value);
@@ -1932,7 +1937,18 @@ int soc3_0_CheckBusHang(void *adapter, uint8_t ucWfResetEnable)
 				DBGLOG(HAL, ERROR,
 					"Bus hang check: 0x%08x = 0x%08x\n",
 					u4Cr, u4Value);
-				break;
+
+				/* check false alarm */
+				u4Cr = CONN_MCU_CONFG_ON_HOST_MAILBOX_WF_ADDR;
+				connac2x_DbgCrRead(prAdapter, u4Cr, &u4Value);
+				DBGLOG(HAL, ERROR,
+					"Bus hang check: 0x%08x = 0x%08x\n",
+					u4Cr, u4Value);
+				if ((u4Value & 0x0001FF87) != 0x00000001) {
+					if (((u4Value & 0x00019E00) != 0) ||
+					    ((u4Value & 0x00000180) == 0))
+						break;
+				}
 			}
 		} else {
 			DBGLOG(HAL, INFO,
@@ -2002,12 +2018,10 @@ int soc3_0_CheckBusHang(void *adapter, uint8_t ucWfResetEnable)
 
 		if (conninfra_reset) {
 			g_IsWfsysBusHang = TRUE;
-			conninfra_trigger_whole_chip_rst(CONNDRV_TYPE_WIFI,
-				"bus hang");
+			glResetWholeChipResetTrigger("bus hang");
 		} else if (ucWfResetEnable) {
 			g_IsWfsysBusHang = TRUE;
-			conninfra_trigger_whole_chip_rst(CONNDRV_TYPE_WIFI,
-				"wifi bus hang");
+			glResetWholeChipResetTrigger("wifi bus hang");
 		}
 	}
 
@@ -2479,6 +2493,11 @@ void wlanCoAntVFE28En(IN struct ADAPTER *prAdapter)
 		if (gCoAntVFE28En == FALSE) {
 #if (KERNEL_VERSION(5, 4, 0) <= CFG80211_VERSION_CODE)
 			/* Implementation for kernel-5.4 */
+#elif (KERNEL_VERSION(4, 15, 0) <= CFG80211_VERSION_CODE)
+			regmap_write(g_regmap,
+				MT6359_LDO_VFE28_OP_EN_SET, 0x1 << 8);
+			regmap_write(g_regmap,
+				MT6359_LDO_VFE28_OP_CFG_CLR, 0x1 << 8);
 #else
 			KERNEL_pmic_ldo_vfe28_lp(8, 0, 1, 0);
 #endif
@@ -2497,6 +2516,10 @@ void wlanCoAntVFE28Dis(void)
 	if (gCoAntVFE28En == TRUE) {
 #if (KERNEL_VERSION(5, 4, 0) <= CFG80211_VERSION_CODE)
 		/* Implementation for kernel-5.4 */
+#elif (KERNEL_VERSION(4, 15, 0) <= CFG80211_VERSION_CODE)
+		regmap_write(g_regmap, MT6359_LDO_VFE28_OP_EN_CLR, 0x1 << 8);
+		regmap_write(g_regmap, MT6359_LDO_VFE28_OP_CFG_CLR, 0x1 << 8);
+		regmap_write(g_regmap, MT6359_LDO_VFE28_OP_CFG_CLR, 0x1 << 8);
 #else
 		KERNEL_pmic_ldo_vfe28_lp(8, 0, 0, 0);
 #endif
@@ -2583,13 +2606,6 @@ int wlanConnacPccifoff(void)
 }
 #endif
 
-#if (CFG_SUPPORT_CONNINFRA == 1)
-int soc3_0_Trigger_whole_chip_rst(char *reason)
-{
-	return conninfra_trigger_whole_chip_rst(CONNDRV_TYPE_WIFI, reason);
-}
-#endif
-
 void soc3_0_icapRiseVcoreClockRate(void)
 {
 	int value = 0;
@@ -2664,7 +2680,7 @@ void soc3_0_ConstructFirmwarePrio(struct GLUE_INFO *prGlueInfo,
 	uint8_t ucIdx = 0;
 	uint8_t aucFlavor[2] = {0};
 
-	kalGetFwFlavor(&aucFlavor[0]);
+	kalGetFwFlavor(prGlueInfo->prAdapter, &aucFlavor[0]);
 
 	for (ucIdx = 0; apucsoc3_0FwName[ucIdx]; ucIdx++) {
 		if ((*pucNameIdx + 3) >= ucMaxNameIdx) {
@@ -2677,10 +2693,12 @@ void soc3_0_ConstructFirmwarePrio(struct GLUE_INFO *prGlueInfo,
 
 		/* Type 1. WIFI_RAM_CODE_soc1_0_1_1 */
 		ret = kalSnprintf(*(apucName + (*pucNameIdx)),
-				CFG_FW_NAME_MAX_LEN, "%s_%u%s_1",
+				CFG_FW_NAME_MAX_LEN, "%s_%u%s_%u",
 				apucsoc3_0FwName[ucIdx],
 				CFG_WIFI_IP_SET,
-				aucFlavor);
+				aucFlavor,
+				wlanGetEcoVersion(
+					prGlueInfo->prAdapter));
 		if (ret >= 0 && ret < CFG_FW_NAME_MAX_LEN)
 			(*pucNameIdx) += 1;
 		else
@@ -2690,10 +2708,12 @@ void soc3_0_ConstructFirmwarePrio(struct GLUE_INFO *prGlueInfo,
 
 		/* Type 2. WIFI_RAM_CODE_soc1_0_1_1.bin */
 		ret = kalSnprintf(*(apucName + (*pucNameIdx)),
-				CFG_FW_NAME_MAX_LEN, "%s_%u%s_1.bin",
+				CFG_FW_NAME_MAX_LEN, "%s_%u%s_%u.bin",
 				apucsoc3_0FwName[ucIdx],
 				CFG_WIFI_IP_SET,
-				aucFlavor);
+				aucFlavor,
+				wlanGetEcoVersion(
+					prGlueInfo->prAdapter));
 		if (ret >= 0 && ret < CFG_FW_NAME_MAX_LEN)
 			(*pucNameIdx) += 1;
 		else
@@ -2753,7 +2773,7 @@ soc3_0_kalFirmwareImageMapping(
 
 	*ppvMapFileBuf = NULL;
 	*pu4FileLength = 0;
-	kalGetFwFlavor(&aucFlavor[0]);
+	kalGetFwFlavor(prGlueInfo->prAdapter, &aucFlavor[0]);
 
 	do {
 		/* <0.0> Get FW name prefix table */

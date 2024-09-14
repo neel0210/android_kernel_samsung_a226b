@@ -521,16 +521,6 @@ enum ENUM_SCN_FUNC_MASK {
 	ENUM_SCN_OCE_SCAN_EN = (1 << 7),
 };
 
-enum ENUM_SCN_SOURCE_MASK {
-	ENUM_SCN_NORMAL = (1 << 0),
-	ENUM_SCN_ROMAING = (1 << 1),
-	/* FW trigger scan */
-	ENUM_SCN_SOURCE_FW = (1 << 2),
-	/* Sensor hub trigger scan */
-	ENUM_SCN_SOURCE_FENCE = (1 << 3),
-	ENUM_SCN_SOURCE_MASK_NUM
-};
-
 struct CMD_PACKET_FILTER_CAP {
 	uint8_t			ucCmd;
 	uint16_t			packet_cap_type;
@@ -1724,13 +1714,14 @@ struct CMD_SET_DOMAIN_INFO {
 
 enum ENUM_PWR_LIMIT_TYPE {
 	PWR_LIMIT_TYPE_COMP_11AC = 0,
-	PWR_LIMIT_TYPE_COMP_11AG_11N = 1,
+	PWR_LIMIT_TYPE_COMP_11AC_V2 = 1,
 	PWR_LIMIT_TYPE_COMP_11AX = 2,
 	PWR_LIMIT_TYPE_COMP_ANT = 3,
 	PWR_LIMIT_TYPE_COMP_6E_1 = 4,
 	PWR_LIMIT_TYPE_COMP_6E_2 = 5,
 	PWR_LIMIT_TYPE_COMP_6E_3 = 6,
 	PWR_LIMIT_TYPE_COMP_ANT_V2 = 7,
+	PWR_LIMIT_TYPE_COMP_11AX_BW160 = 8,
 	PWR_LIMIT_TYPE_COMP_NUM,
 };
 
@@ -1773,12 +1764,14 @@ struct CMD_CHANNEL_POWER_LIMIT_6E {
 /* CMD_SET_PWR_LIMIT_TABLE */
 struct CMD_CHANNEL_POWER_LIMIT {
 	uint8_t ucCentralCh;
-
-	int8_t cPwrLimitCCK;
-#if (CFG_SUPPORT_DYNA_TX_PWR_CTRL_OFDM_SETTING == 1)
+#if (CFG_SUPPORT_DYNA_TX_PWR_CTRL_11AC_V2_SETTING == 1)
+	int8_t cPwrLimitCCK_L; /* CCK_L, 1M,2M */
+	int8_t cPwrLimitCCK_H; /* CCK_H, 5.5M,11M */
 	int8_t cPwrLimitOFDM_L; /* OFDM_L,  6M ~ 18M */
 	int8_t cPwrLimitOFDM_H; /* OFDM_H, 24M ~ 54M */
-#endif /* CFG_SUPPORT_DYNA_TX_PWR_CTRL_OFDM_SETTING */
+#else
+	int8_t cPwrLimitCCK;
+#endif /* CFG_SUPPORT_DYNA_TX_PWR_CTRL_11AC_V2_SETTING */
 	int8_t cPwrLimit20L; /* MCS0~4 */
 	int8_t cPwrLimit20H; /* MCS5~8 */
 	int8_t cPwrLimit40L; /* MCS0~4 */
@@ -1822,6 +1815,41 @@ struct CMD_CHANNEL_POWER_LIMIT_HE { /*HE SU design*/
 
 };
 
+struct CMD_CHANNEL_POWER_LIMIT_HE_BW160 { /*HE SU design*/
+	uint8_t ucCentralCh;
+	int8_t cPwrLimitRU26L; /* MCS0~4 */
+	int8_t cPwrLimitRU26H; /* MCS5~9 */
+	int8_t cPwrLimitRU26U; /* MCS10~11 */
+
+	int8_t cPwrLimitRU52L; /* MCS0~4 */
+	int8_t cPwrLimitRU52H; /* MCS5~9 */
+	int8_t cPwrLimitRU52U; /* MCS10~11 */
+
+	int8_t cPwrLimitRU106L; /* MCS0~4 */
+	int8_t cPwrLimitRU106H; /* MCS5~9 */
+	int8_t cPwrLimitRU106U; /* MCS10~11 */
+	/*RU242/SU20*/
+	int8_t cPwrLimitRU242L; /* MCS0~4 */
+	int8_t cPwrLimitRU242H; /* MCS5~9 */
+	int8_t cPwrLimitRU242U; /* MCS10~11 */
+	/*RU484/SU40*/
+	int8_t cPwrLimitRU484L; /* MCS0~4 */
+	int8_t cPwrLimitRU484H; /* MCS5~9 */
+	int8_t cPwrLimitRU484U; /* MCS10~11 */
+	/*RU996/SU80*/
+	int8_t cPwrLimitRU996L; /* MCS0~4 */
+	int8_t cPwrLimitRU996H; /* MCS5~9 */
+	int8_t cPwrLimitRU996U; /* MCS10~11 */
+	/*RU1992/SU160*/
+	int8_t cPwrLimitRU1992L; /* MCS0~4 */
+	int8_t cPwrLimitRU1992H; /* MCS5~9 */
+	int8_t cPwrLimitRU1992U; /* MCS10~11 */
+
+	uint8_t ucFlag;
+	uint8_t ucValid;
+
+};
+
 #if CFG_SUPPORT_DYNAMIC_PWR_LIMIT_ANT_TAG
 
 #define POWER_LIMIT_ANT_CONFIG_NUM 60
@@ -1856,6 +1884,9 @@ struct CMD_SET_COUNTRY_CHANNEL_POWER_LIMIT {
 		/*Channel HE power limit entries to be set*/
 		struct CMD_CHANNEL_POWER_LIMIT_HE
 			rChPwrLimtHE[MAX_CMD_SUPPORT_CHANNEL_NUM];
+		/*Channel HE BW160 power limit entries to be set*/
+		struct CMD_CHANNEL_POWER_LIMIT_HE_BW160
+			rChPwrLimtHEBW160[MAX_CMD_SUPPORT_CHANNEL_NUM];
 #if CFG_SUPPORT_DYNAMIC_PWR_LIMIT_ANT_TAG
 		struct CMD_CHANNEL_POWER_LIMIT_ANT
 			rChPwrLimtAnt[POWER_LIMIT_ANT_CONFIG_NUM];
@@ -2635,7 +2666,7 @@ struct CMD_SCHED_SCAN_REQ {
 	uint8_t ucMatchSsidNum;
 	uint8_t aucPadding_0;
 	uint16_t u2IELen;
-	struct PARAM_SSID auSsid[10];
+	struct PARAM_SSID auSsid[16];
 	struct SSID_MATCH_SETS auMatchSsid[16];
 	uint8_t ucChannelType;
 	uint8_t ucChnlNum;
@@ -3636,11 +3667,6 @@ void nicNanVendorEventHandler(IN struct ADAPTER *prAdapter,
 
 void nicEventReportUEvent(IN struct ADAPTER *prAdapter,
 		     IN struct WIFI_EVENT *prEvent);
-
-#if (CFG_SUPPORT_PKT_OFLD == 1)
-void nicEventPktOfld(IN struct ADAPTER *prAdapter,
-		     IN struct WIFI_EVENT *prEvent);
-#endif
 
 void tputEventFactorHandler(IN struct ADAPTER *prAdapter,
 		  IN struct WIFI_EVENT *prEvent);
