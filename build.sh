@@ -108,12 +108,15 @@ build_kernel() {
     
     # Set the defconfig
     make O=out ARCH="$ARCH" "$KERNEL_DEFCONFIG"
-    make -j$(nproc --all) O=out \
+    if ! make -j$(nproc --all) O=out \
         ARCH="$ARCH" \
         CC="$CLANG_PATH" \
         CLANG_TRIPLE="$CLANG_TRIPLE_PATH" \
         CROSS_COMPILE="$GCC64_PATH" \
-        CONFIG_NO_ERROR_ON_MISMATCH=y
+        CONFIG_NO_ERROR_ON_MISMATCH=y; then
+        log "$red Build failed! Sending logs... $nocol"
+        send_logs_and_exit
+    fi
 }
 
 # Function to send logs to Telegram and exit
@@ -189,8 +192,6 @@ upload_kernel_to_telegram() {
     fi
 }
 
-
-
 # Function to clean up
 clean_up() {
     log "$cyan ***********************************************"
@@ -214,3 +215,4 @@ log "$yellow Build completed in $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) se
 
 upload_kernel_to_telegram
 clean_up
+
